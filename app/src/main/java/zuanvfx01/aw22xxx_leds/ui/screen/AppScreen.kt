@@ -2,6 +2,7 @@ package zuanvfx01.aw22xxx_leds.ui.screen
 
 import zuanvfx01.aw22xxx_leds.ui.utils.appText
 import zuanvfx01.aw22xxx_leds.ui.utils.appString
+import zuanvfx01.aw22xxx_leds.ui.utils.GitHubUpdateDialog
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.core.RepeatMode
@@ -526,5 +527,8 @@ private data class Quad(
 
 @Composable
 fun AppScreen() {
-    AppTheme { AppRouter() }
+    AppTheme {
+        AppRouter()
+        GitHubUpdateDialog()
+    }
 }

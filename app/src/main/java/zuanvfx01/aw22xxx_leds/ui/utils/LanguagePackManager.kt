@@ -78,6 +78,12 @@ object LanguagePackManager {
 
     val defaults: Map<String, String> = linkedMapOf(
         "app_name" to "Awinic Leds",
+        "update_available_title" to "Update available",
+        "update_available_message" to "A newer module version %s is available. Your version is %s. Download the module ZIP and flash it manually in Magisk.",
+        "update_downloading" to "Downloading module %s...",
+        "update_downloading_button" to "Downloading...",
+        "update_now" to "Download module",
+        "update_later" to "Later",
         "welcome_title" to "Hello!",
         "welcome_text" to "This app is designed to restore the functionality of the Awinic (aw22xxx) LEDs on the POCO F4 GT.\n\nThe app may work on other devices that have these LEDs, but it is not guaranteed.\nPlease take this into account.\n\nIf you think the app should work on your firmware or device, but the app does not work, create an issue on the project's GitHub page.",
         "continue_button" to "Continue",

@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
     <cache-path
+        name="app_cache"
+        path="." />
+    <cache-path
         name="led_diagnostics"
         path="led-diagnostics/" />
 </paths>

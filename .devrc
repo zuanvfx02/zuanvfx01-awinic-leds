@@ -1,0 +1,49 @@
+#!/bin/bash
+
+PROJECT_DIR=$(realpath ./)
+INSTALL_WITH=magisk
+
+pack-debug() {
+  mkdir -p "$PROJECT_DIR/build/module/"
+
+  "$PROJECT_DIR"/module/build.sh \
+    --output="$PROJECT_DIR/build/module/debug-wo-apk.zip"
+}
+
+pack-debug-apk() {
+  mkdir -p "$PROJECT_DIR/build/module/"
+
+  "$PROJECT_DIR"/module/build.sh \
+    --apk="$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk" \
+    --output="$PROJECT_DIR/build/module/debug-w-apk.zip"
+}
+
+install-debug() {
+  mkdir -p "$PROJECT_DIR/build/module/"
+
+  if [[ "$1" -eq 0 ]]; then
+    "$PROJECT_DIR"/module/build.sh \
+      --install="$INSTALL_WITH" \
+      --output="$PROJECT_DIR/build/module/debug-wo-apk.zip"
+  else
+    "$PROJECT_DIR"/module/build.sh \
+      --install="$INSTALL_WITH",reboot \
+      --output="$PROJECT_DIR/build/module/debug-wo-apk.zip"
+  fi
+}
+
+install-debug-apk() {
+  mkdir -p "$PROJECT_DIR/build/module/"
+
+  if [[ "$1" -eq 0 ]]; then
+    "$PROJECT_DIR"/module/build.sh \
+      --install="$INSTALL_WITH" \
+      --apk="$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk" \
+      --output="$PROJECT_DIR/build/module/debug-w-apk.zip"
+  else
+    "$PROJECT_DIR"/module/build.sh \
+      --install="$INSTALL_WITH",reboot \
+      --apk="$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk" \
+      --output="$PROJECT_DIR/build/module/debug-w-apk.zip"
+  fi
+}

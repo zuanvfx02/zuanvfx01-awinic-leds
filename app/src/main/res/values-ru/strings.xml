@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="welcome_title">Привет!</string>
+    <string name="welcome_text">Это приложение создано для возвращения работы светодиодов Awinic (aw22xxx) на POCO F4 GT.\n\nПриложение может работать на других девайсах, имеющих данные светодиоды, но не гарантированно.\nПримите это во внимание.\n\nЕсли вы считаете, что приложение должно работать на вашей прошивке или устройстве, но приложение не работает - создайте issue на GitHub странице проекта.</string>
+    <string name="continue_button">Продолжить</string>
+    <string name="led_hwen_title">Включен</string>
+    <string name="led_effect_title">Эффект</string>
+    <string name="led_use_own_values_title">Использовать свои значения</string>
+    <string name="led_use_own_values_description">Заменять цвета и частоту на свои</string>
+    <string name="led_frq_title">Частота</string>
+    <string name="cat_own_values">Свои значения</string>
+    <string name="led_rgb_title">Цвет #%1$d</string>
+    <string name="cat_application">Приложение</string>
+    <string name="led_use_saved_settings_title">Использовать сохранённые настройки</string>
+    <string name="led_use_saved_settings_description">Применять сохранённые настройки после перезапуска</string>
+    <string name="access_exception_title">Не удалось получить доступ к файлам sysfs!</string>
+    <string name="back">Back</string>
+</resources>

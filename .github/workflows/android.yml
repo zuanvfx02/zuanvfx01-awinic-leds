@@ -1,0 +1,88 @@
+name: Android CI
+
+on:
+  push:
+    tags:
+      - '*'
+  workflow_dispatch:
+
+env:
+  VERSION: ${{ github.event_name != 'workflow_dispatch' && github.ref_name || github.sha }}
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Build with Gradle
+        run: ./gradlew assembleRelease
+
+      - name: Check Android Build Tools
+        run: |
+          ls /usr/local/lib/android/sdk/build-tools/
+
+      - name: Sign Release
+        id: sign_app
+        uses: r0adkll/sign-android-release@v1.0.4
+        with:
+          releaseDirectory: app/build/outputs/apk/release
+          signingKeyBase64: ${{ secrets.SIGNING_KEY }}
+          alias: ${{ secrets.KEYSTORE_ALIAS }}
+          keyStorePassword: ${{ secrets.KEYSTORE_PASSWORD }}
+          keyPassword: ${{ secrets.KEY_PASSWORD }}
+        env:
+          BUILD_TOOLS_VERSION: "34.0.0"
+
+      - name: Move artifact
+        run: mv ${{steps.sign_app.outputs.signedReleaseFile}} app/build/outputs/apk/release/app-release-signed.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release.apk
+          path: app/build/outputs/apk/release/app-release-signed.apk
+
+      - name: Build module
+        run: |
+          chmod +x module/build.sh
+          module/build.sh \
+            -a app/build/outputs/apk/release/app-release-signed.apk \
+            -o module-release-${{ env.VERSION }}.zip
+
+      - name: Upload module
+        uses: actions/upload-artifact@v4
+        with:
+          name: module-release-${{ env.VERSION }}.zip
+          path: module-release-${{ env.VERSION }}.zip
+
+      - name: Generate changelog
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        run: |
+          LAST_TAG=$(git describe --tags --abbrev=0 HEAD^)
+          echo "## Commits from previous release $LAST_TAG" > CHANGELOG.md
+          git log $LAST_TAG..HEAD --oneline >> CHANGELOG.md
+
+      - name: Create Release
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        uses: ncipollo/release-action@v1.16.0
+        with:
+          artifacts: module-release-${{ env.VERSION }}.zip
+          bodyFile: CHANGELOG.md

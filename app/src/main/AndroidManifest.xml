@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"> <!-- Tambahan xmlns:tools -->
+
+    <!-- Izin bawaan lu -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+
+    <application
+        android:name=".Application"
+        android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.AppTheme"
+        tools:targetApi="31"> <!-- TAMBAHAN: Ini yang bikin aplikasi lu kebal dari app killer -->
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:theme="@style/Theme.AppTheme">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Receiver bawaan lu (biarin aja jangan diubah) -->
+        <receiver
+            android:name=".receiver.BootCompletedReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+        
+                <!-- Service untuk Mendengarkan Notifikasi -->
+        <service
+            android:name=".services.LedNotificationService"
+            android:label="Awinic LED Notifier"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
+        <!-- SERVICE CHARGER RESMI YANG BARU -->
+        <service
+            android:name=".services.ChargerService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse" />
+
+        <!-- SERVICE MUSIC LED -->
+        <service
+            android:name=".services.MusicLedService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
+
+        <!-- ========================================== -->
+        <!-- TAMBAHAN BARU UNTUK FITUR NOTIF & CHARGER  -->
+        <!-- ========================================== -->
+
+        <receiver
+            android:name=".receiver.TimerReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="zuanvfx01.aw22xxx_leds.TIMER_ON" />
+                <action android:name="zuanvfx01.aw22xxx_leds.TIMER_OFF" />
+            </intent-filter>
+        </receiver>
+        
+                <!-- RECEIVER UNTUK CHARGER -->
+        <receiver
+            android:name=".receivers.ChargerReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.ACTION_POWER_CONNECTED" />
+                <action android:name="android.intent.action.ACTION_POWER_DISCONNECTED" />
+            </intent-filter>
+        </receiver>
+        
+
+    </application>
+
+</manifest>

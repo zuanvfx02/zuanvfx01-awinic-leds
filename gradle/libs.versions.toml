@@ -1,0 +1,50 @@
+[versions]
+agp = "9.2.1"
+kotlin = "2.3.0"
+coreKtx = "1.19.0"
+colorpicker = "1.1.2"
+lifecycleRuntimeKtx = "2.11.0"
+activityCompose = "1.13.0-alpha01"
+composeBom = "2026.06.01"
+# Material 3 Expressive: pinned explicitly because the BOM still resolves to the 1.4.x stable line.
+material3 = "1.5.0-alpha24"
+navigationCompose = "2.9.8"
+lifecycleRuntimeCompose = "2.11.0"
+datastore = "1.1.6"
+protobuf = "4.35.1"
+protobufPlugin = "0.10.0"
+ksp = "2.3.4"
+
+hiltAndroid = "2.59.2"
+hiltAndroidCompiler = "2.59.2"
+hiltNavigationCompose = "1.2.0"
+
+[libraries]
+androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
+compose-colorpicker = { module = "com.github.skydoves:colorpicker-compose", version.ref = "colorpicker" }
+androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "lifecycleRuntimeKtx" }
+androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
+androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
+androidx-ui = { group = "androidx.compose.ui", name = "ui" }
+androidx-ui-graphics = { group = "androidx.compose.ui", name = "ui-graphics" }
+androidx-ui-tooling = { group = "androidx.compose.ui", name = "ui-tooling" }
+androidx-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
+androidx-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest" }
+androidx-material3 = { group = "androidx.compose.material3", name = "material3", version.ref = "material3" }
+androidx-navigation-compose = { group = "androidx.navigation", name = "navigation-compose", version.ref = "navigationCompose" }
+androidx-lifecycle-runtime-compose = { group = "androidx.lifecycle", name = "lifecycle-runtime-compose", version.ref = "lifecycleRuntimeCompose" }
+androidx-datastore = { group ="androidx.datastore", name = "datastore", version.ref="datastore"}
+protobuf-javalite = { module = "com.google.protobuf:protobuf-javalite", version.ref = "protobuf" }
+protobuf-java = { module = "com.google.protobuf:protobuf-java", version.ref = "protobuf" }
+
+androidx-hilt-navigation-compose = { module = "androidx.hilt:hilt-navigation-compose", version.ref = "hiltNavigationCompose" }
+hilt-android-compiler = { module = "com.google.dagger:hilt-android-compiler", version.ref = "hiltAndroidCompiler" }
+hilt-android = { module = "com.google.dagger:hilt-android", version.ref = "hiltAndroid" }
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
+kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+protobuf = { id = "com.google.protobuf", version.ref = "protobufPlugin" }
+hilt = { id = "com.google.dagger.hilt.android", version.ref = "hiltAndroid" }
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" } # Tambahkan baris ini
+ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }

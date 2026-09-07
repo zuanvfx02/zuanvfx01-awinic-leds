@@ -1,0 +1,59 @@
+syntax = "proto3";
+
+// INI DIA BIANG KEROKNYA: Harus murni tanpa ".proto" di akhir!
+option java_package = "zuanvfx01.aw22xxx_leds";
+option java_multiple_files = true;
+
+message SavedLedSettings {
+  bool hwen = 1;
+  int32 effect = 2;
+  int32 frq = 3;
+  map<int32, int32> rgb = 4;
+}
+
+message AutomationConfig {
+  bool enabled = 1;
+  SavedLedSettings led = 2;
+  bool use_own_values = 3;
+}
+
+message TimerSettings {
+  bool enabled = 1;
+  int32 start_hour = 2;
+  int32 start_minute = 3;
+  int32 end_hour = 4;
+  int32 end_minute = 5;
+  
+  SavedLedSettings led = 6;
+  bool use_own_values = 7;
+}
+
+message MusicLedConfig {
+  bool enabled = 1;
+  bool use_random_effects = 2;
+  bool use_own_values = 3;
+  bool use_dynamic_colors = 4;
+  repeated int32 enabled_effects = 5;
+  int32 sensitivity = 6;
+  int32 min_frequency = 7;
+  int32 max_frequency = 8;
+  
+  // Reserved from the old MediaProjection implementation; microphone mode needs no capture token.
+  reserved 9, 10;
+}
+
+message Settings {
+  bool completed_intro = 1;
+  bool completed_tutorial = 10;
+
+  SavedLedSettings led = 2;
+  bool use_saved_settings = 3;
+  bool use_own_values = 4;
+
+  bool smart_override = 5;
+
+  AutomationConfig notification = 6;
+  AutomationConfig charger = 7;
+  TimerSettings timer = 8;
+  MusicLedConfig music = 9;
+}

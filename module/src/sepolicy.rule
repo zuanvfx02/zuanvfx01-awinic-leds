@@ -1,0 +1,6 @@
+type sysfs_led sysfs_type
+
+typeattribute sysfs_led fs_type
+typeattribute sysfs_led mlstrustedobject
+
+allow priv_app sysfs_led file { open read write getattr }

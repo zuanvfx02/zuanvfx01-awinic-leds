@@ -1,0 +1,60 @@
+<resources>
+    <string name="app_name" translatable="false">Awinic Leds</string>
+    <string name="app_name_0" translatable="false">Awinic</string>
+    <string name="app_name_1" translatable="false">Leds</string>
+
+    <string name="welcome_title">Hello!</string>
+    <string name="welcome_text">This app is designed to restore the functionality of the Awinic (aw22xxx) LEDs on the POCO F4 GT.\n\nThe app may work on other devices that have these LEDs, but it is not guaranteed.\nPlease take this into account.\n\nIf you think the app should work on your firmware or device, but the app does not work, create an issue on the project\'s GitHub page.</string>
+    <string name="continue_button">Continue</string>
+
+    <string name="led_hwen_title">Enabled</string>
+    <string name="led_effect_title">Effect</string>
+    <string name="led_use_own_values_title">Use own values</string>
+    <string name="led_use_own_values_description">Replace default colors and freq by own</string>
+    <string name="ok" translatable="false">OK</string>
+    <string name="led_frq_title">Frequency</string>
+    <string name="cat_own_values">Own values</string>
+    <string name="led_rgb_title">Color #%1$d</string>
+    <string name="cat_application">Application</string>
+    <string name="led_use_saved_settings_title">Use saved settings</string>
+    <string name="led_use_saved_settings_description">Apply saved settings after reboot</string>
+    <string name="access_exception_title">Failed to access sysfs files!</string>
+    <string name="back">Back</string>
+
+    <!-- Navigation Strings -->
+    <string name="nav_home">Home</string>
+    <string name="nav_settings">Settings</string>
+    <string name="nav_info">Info</string>
+
+    <!-- Home Screen Strings -->
+    <string name="home_subtitle">Controller Overview</string>
+    <string name="value_none">None</string>
+    <string name="home_section_controller">Controller</string>
+    <string name="home_status">Status</string>
+    <string name="home_status_online">Online</string>
+    <string name="home_status_offline">Offline</string>
+    <string name="home_sysfs_path">SysFs Path</string>
+    <string name="home_imax">IMax</string>
+    <string name="value_unknown">Unknown</string>
+    <string name="home_trigger">Trigger</string>
+    <string name="home_section_state">State</string>
+    <string name="home_leds_on">On</string>
+    <string name="home_leds_off">Off</string>
+    <string name="home_effect">Effect</string>
+    <string name="home_frequency">Frequency</string>
+    <string name="value_hz">%1$s Hz</string>
+
+    <!-- Widget Strings -->
+    <string name="cancel">Cancel</string>
+    <string name="scroll_to_select">Scroll to select</string>
+
+    <!-- Plurals -->
+    <plurals name="home_colors_count">
+        <item quantity="one">%1$d Color</item>
+        <item quantity="other">%1$d Colors</item>
+    </plurals>
+    <plurals name="home_registers_count">
+        <item quantity="one">%1$d Register</item>
+        <item quantity="other">%1$d Registers</item>
+    </plurals>
+</resources>

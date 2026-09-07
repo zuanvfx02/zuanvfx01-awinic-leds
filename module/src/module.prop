@@ -1,6 +1,6 @@
 id=aw22xxx_leds
 name=Awinic Leds
-version=v1.4.0
+version=v1.0.0
 versionCode=8
 author=n08i40k
 description=Module installing application for led operation

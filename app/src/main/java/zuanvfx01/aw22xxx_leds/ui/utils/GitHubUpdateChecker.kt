@@ -26,7 +26,7 @@ private const val UPDATE_JSON_URL = "https://raw.githubusercontent.com/zuanvfx02
 private const val PREFS = "update_checker"
 private const val KEY_DISMISSED = "dismissed_version"
 
-private data class ModuleUpdate(
+data class ModuleUpdate(
     val version: String,
     val versionCode: Int,
     val zipUrl: String,

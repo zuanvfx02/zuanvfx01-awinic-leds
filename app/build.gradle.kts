@@ -116,3 +116,32 @@ protobuf {
         }
     }
 }
+
+// ACS_SIGNING_CONFIG_START
+val keystorePropertiesFile = file("keystore.properties")
+val acsProps = if (keystorePropertiesFile.exists()) {
+    keystorePropertiesFile.readLines()
+        .filter { '=' in it }
+        .associate { it.substringBefore('=').trim() to it.substringAfter('=').trim() }
+} else emptyMap()
+
+android {
+    signingConfigs {
+        maybeCreate("release").apply {
+            val sf = acsProps["storeFile"]
+            val sp = acsProps["storePassword"]
+            val ka = acsProps["keyAlias"]
+            val kp = acsProps["keyPassword"]
+            if (!sf.isNullOrBlank()) storeFile = file(sf)
+            if (!sp.isNullOrBlank()) storePassword = sp
+            if (!ka.isNullOrBlank()) keyAlias = ka
+            if (!kp.isNullOrBlank()) keyPassword = kp
+        }
+    }
+    buildTypes {
+        getByName("release") {
+            signingConfig = signingConfigs.getByName("release")
+        }
+    }
+}
+// ACS_SIGNING_CONFIG_END

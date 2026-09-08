@@ -26,8 +26,11 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = true
-            isShrinkResources = true
+            // R8 optimization breaks protobuf-lite generated Settings fields
+            // (e.g. completedIntro_) on this build. Keep release unminified
+            // until the protobuf/R8 combination is updated.
+            isMinifyEnabled = false
+            isShrinkResources = false
 
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),

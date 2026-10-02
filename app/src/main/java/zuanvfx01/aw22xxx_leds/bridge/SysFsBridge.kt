@@ -40,6 +40,7 @@ object SysFsBridge {
     /** Configure a node selected by the compatibility probe. */
     fun configureCapabilities(capabilities: Map<String, CompatibilityScanner.Capability>) {
         capabilityStates = capabilities.mapValues { it.value.state }
+        invalidateWriteCache()
     }
 
     fun supports(capability: String): Boolean =
@@ -50,6 +51,7 @@ object SysFsBridge {
         val candidate = File(path)
         if (!candidate.isDirectory) return false
         configuredLedDir = candidate.absolutePath
+        invalidateWriteCache()
         return true
     }
 
@@ -82,17 +84,30 @@ object SysFsBridge {
     }
 
     object Files {
-        val directory: File get() = File(LED_DIR)
-        val brightness: File get() = File(LED_DIR, "brightness")
-        val maxBrightness: File get() = File(LED_DIR, "max_brightness")
-        val hwen: File get() = File(LED_DIR, "hwen")
-        val reg: File get() = File(LED_DIR, "reg")
-        val imax: File get() = File(LED_DIR, "imax")
-        val effect: File get() = File(LED_DIR, "effect")
-        val cfg: File get() = File(LED_DIR, "cfg")
-        val frq: File get() = File(LED_DIR, "frq")
-        val rgb: File get() = File(LED_DIR, "rgb")
-        val trigger: File get() = File(LED_DIR, "trigger")
+        // Cache File path objects by their absolute sysfs path. We intentionally do not keep
+        // open descriptors: sysfs attributes are not guaranteed to behave correctly with a
+        // long-lived descriptor, and writeText() gives the kernel a fresh attribute write.
+        private val cache = HashMap<String, File>()
+        private val lock = Any()
+
+        private fun file(name: String): File {
+            val path = File(LED_DIR, name).absolutePath
+            synchronized(lock) {
+                return cache.getOrPut(path) { File(path) }
+            }
+        }
+
+        val directory: File get() = file("")
+        val brightness: File get() = file("brightness")
+        val maxBrightness: File get() = file("max_brightness")
+        val hwen: File get() = file("hwen")
+        val reg: File get() = file("reg")
+        val imax: File get() = file("imax")
+        val effect: File get() = file("effect")
+        val cfg: File get() = file("cfg")
+        val frq: File get() = file("frq")
+        val rgb: File get() = file("rgb")
+        val trigger: File get() = file("trigger")
     }
 
     private fun File.safeRead(default: String = ""): String = runCatching {
@@ -100,11 +115,57 @@ object SysFsBridge {
         readText()
     }.getOrDefault(default)
 
+    private data class WriteCacheEntry(val value: String, val atMs: Long)
+    private val writeCacheLock = Any()
+    private val writeCache = HashMap<String, WriteCacheEntry>()
+
     private fun File.safeWrite(value: String): Boolean = runCatching {
-        if (!isFile || !canWrite()) return@runCatching false
+        // Do not preflight isFile/canWrite on every hot-path write. Those checks are extra
+        // filesystem calls; writeText() already reports failure and is guarded by runCatching.
         writeText(value)
         true
     }.getOrDefault(false)
+
+    private fun File.safeWriteCached(
+        value: String,
+        cacheKey: String = absolutePath,
+        rewriteAfterMs: Long = 1_500L,
+    ): Boolean {
+        val now = android.os.SystemClock.elapsedRealtime()
+        synchronized(writeCacheLock) {
+            val previous = writeCache[cacheKey]
+            if (previous != null && previous.value == value && now - previous.atMs < rewriteAfterMs) return true
+        }
+        val ok = safeWrite(value)
+        if (ok) synchronized(writeCacheLock) {
+            writeCache[cacheKey] = WriteCacheEntry(value, now)
+        }
+        return ok
+    }
+
+    fun invalidateWriteCache() {
+        synchronized(writeCacheLock) { writeCache.clear() }
+        ledCountCache = -1
+    }
+
+    @Volatile private var ledCountCache = -1
+
+    /**
+     * How many LEDs this phone really has, taken from the `rgb` node (one line per LED).
+     * 0 = unknown/unreadable. Used to refuse writes to LEDs that do not exist.
+     */
+    val ledCount: Int
+        get() {
+            val cached = ledCountCache
+            if (cached > 0) return cached
+            val n = LedColors.count(Files.rgb)
+            if (n > 0) ledCountCache = n
+            return n
+        }
+
+    /** True when per-LED colour control is both exposed and has a known, valid LED count. */
+    val colorControlUsable: Boolean
+        get() = isPresent && (capabilityStates.isEmpty() || supports("rgb")) && ledCount > 0
 
     object IO {
         /** Best-effort hardware enable. Some AWINIC kernels expose hwen, others only brightness. */
@@ -125,7 +186,7 @@ object SysFsBridge {
             } else 0
             set(value) {
                 if (capabilityStates.isEmpty() || supports("brightness")) {
-                    Files.brightness.safeWrite(value.coerceAtLeast(0).toString())
+                    Files.brightness.safeWriteCached(value.coerceAtLeast(0).toString(), rewriteAfterMs = 1_000L)
                 }
             }
 
@@ -139,7 +200,7 @@ object SysFsBridge {
                     else -> false
                 }
             }
-            set(value) { if (capabilityStates.isEmpty() || supports("hwen")) Files.hwen.safeWrite(if (value) "1" else "0") }
+            set(value) { if (capabilityStates.isEmpty() || supports("hwen")) Files.hwen.safeWriteCached(if (value) "1" else "0", rewriteAfterMs = 1_000L) }
 
         val registers: List<LedReg>
             get() = if (capabilityStates.isEmpty() || supports("reg")) runCatching { LedReg.read(Files.reg) }.getOrDefault(emptyList()) else emptyList()
@@ -158,14 +219,18 @@ object SysFsBridge {
 
         var frequency: Int
             get() = if (capabilityStates.isEmpty() || supports("frq")) runCatching { LedFrq.read(Files.frq) }.getOrDefault(1) else 1
-            set(hz) { if (capabilityStates.isEmpty() || supports("frq")) Files.frq.safeWrite(hz.coerceIn(1, 100).toString()) }
+            set(hz) { if (capabilityStates.isEmpty() || supports("frq")) Files.frq.safeWriteCached(hz.coerceIn(1, 100).toString(), rewriteAfterMs = 250L) }
 
         val colors: List<Color>
             get() = if (capabilityStates.isEmpty() || supports("rgb")) runCatching { LedColors.read(Files.rgb) }
                 .getOrDefault(listOf(Color.Black)) else emptyList()
 
         fun setColor(index: UByte, color: Color) {
-            if (capabilityStates.isEmpty() || supports("rgb")) runCatching { LedColors.write(Files.rgb, index, color) }
+            if (!(capabilityStates.isEmpty() || supports("rgb"))) return
+            // Never address an LED the hardware does not have (can reset the phone on some kernels).
+            val count = ledCount
+            if (count > 0 && index.toInt() >= count) return
+            runCatching { LedColors.write(Files.rgb, index, color) }
         }
 
         val triggers: Pair<List<String>, Int>
@@ -185,6 +250,20 @@ object SysFsBridge {
             isPresent && listOf(Files.hwen, Files.effect, Files.cfg, Files.frq, Files.rgb)
                 .any { it.isFile && it.canRead() }
         }.getOrDefault(false)
+
+    /**
+     * True when the LED node can be traversed AND every control file that exists is writable.
+     *
+     * Used at boot: the Magisk module relabels/chmods the nodes only after boot_completed, so the
+     * app may start before that. File.exists()/canWrite() swallow EACCES and return false, which
+     * is exactly what we want here: "not ready yet, try again".
+     */
+    fun isWriteReady(): Boolean = runCatching {
+        if (!File(resolveKnownNode()).isDirectory) return@runCatching false
+        val present = listOf(Files.hwen, Files.effect, Files.cfg, Files.frq, Files.rgb)
+            .filter { it.exists() }
+        present.isNotEmpty() && present.all { it.canWrite() }
+    }.getOrDefault(false)
 
     fun flushCfg(useOwnValues: Boolean) {
         if (capabilityStates.isEmpty() || supports("cfg")) Files.cfg.safeWrite(if (useOwnValues) "2" else "1")

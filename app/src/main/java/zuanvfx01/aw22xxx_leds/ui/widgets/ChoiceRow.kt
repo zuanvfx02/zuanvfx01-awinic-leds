@@ -1,5 +1,6 @@
 package zuanvfx01.aw22xxx_leds.ui.widgets
 
+import zuanvfx01.aw22xxx_leds.ui.glass.AppDialog
 import zuanvfx01.aw22xxx_leds.ui.utils.appString
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
@@ -77,10 +78,13 @@ fun <T> ChoiceRow(
             initialFirstVisibleItemIndex = currentValueIndex.coerceAtLeast(0)
         )
 
-        AlertDialog(
+        AppDialog(
             onDismissRequest = { open = false },
-            title = { Text(headline) },
-            text = {
+            title = headline,
+            confirmText = appString(R.string.cancel),
+            onConfirm = { open = false },
+            confirmPrimary = false, // single neutral capsule; on Android 11- it stays the old TextButton
+        ) {
                 LazyColumn(Modifier.heightIn(max = 420.dp), state = listState) {
                     itemsIndexed(values) { index, value ->
                         val selected = index == currentValueIndex
@@ -105,10 +109,6 @@ fun <T> ChoiceRow(
                         }
                     }
                 }
-            },
-            confirmButton = {
-                TextButton({ open = false }) { Text(appString(R.string.cancel)) }
-            }
-        )
+        }
     }
 }

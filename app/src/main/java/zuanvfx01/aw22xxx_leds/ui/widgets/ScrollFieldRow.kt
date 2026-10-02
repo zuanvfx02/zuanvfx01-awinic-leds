@@ -1,5 +1,6 @@
 package zuanvfx01.aw22xxx_leds.ui.widgets
 
+import zuanvfx01.aw22xxx_leds.ui.glass.AppDialog
 import zuanvfx01.aw22xxx_leds.ui.utils.appString
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -64,10 +65,18 @@ fun <T> ScrollFieldRow(
             index = currentValueIndex.coerceIn(0, (values.size - 1).coerceAtLeast(0))
         )
 
-        AlertDialog(
+        AppDialog(
             onDismissRequest = { open = false },
-            title = { Text(headline) },
-            text = {
+            title = headline,
+            confirmText = appString(R.string.ok),
+            onConfirm = {
+                onValueChange(state.selectedOption)
+                open = false
+            },
+            confirmExpressive = true,
+            dismissText = appString(R.string.cancel),
+            onDismiss = { open = false },
+        ) {
                 Column(
                     Modifier.fillMaxWidth(),
                     horizontalAlignment = Alignment.CenterHorizontally
@@ -99,19 +108,6 @@ fun <T> ScrollFieldRow(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-            },
-            confirmButton = {
-                Button(
-                    {
-                        onValueChange(state.selectedOption)
-                        open = false
-                    },
-                    shapes = ButtonDefaults.shapes()
-                ) { Text(appString(R.string.ok)) }
-            },
-            dismissButton = {
-                TextButton({ open = false }) { Text(appString(R.string.cancel)) }
-            }
-        )
+        }
     }
 }

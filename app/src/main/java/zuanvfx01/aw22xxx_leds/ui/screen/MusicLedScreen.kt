@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -19,10 +21,16 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.FlashOn
+import androidx.compose.material.icons.filled.GpsFixed
 import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material3.Button
@@ -48,7 +56,9 @@ import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -59,8 +69,17 @@ import kotlinx.coroutines.launch
 import zuanvfx01.aw22xxx_leds.Application
 import zuanvfx01.aw22xxx_leds.MusicLedConfig
 import zuanvfx01.aw22xxx_leds.bridge.SysFsBridge
+import zuanvfx01.aw22xxx_leds.bridge.LedEffect
+import androidx.compose.ui.text.style.TextOverflow
+import zuanvfx01.aw22xxx_leds.services.DynamicColorGuard
+import zuanvfx01.aw22xxx_leds.services.BeatMode
 import zuanvfx01.aw22xxx_leds.services.MusicLedService
+import zuanvfx01.aw22xxx_leds.ui.widgets.BeatDetectionCard
+import zuanvfx01.aw22xxx_leds.ui.widgets.LedEventsCard
+import zuanvfx01.aw22xxx_leds.ui.widgets.LedResponseCard
+import zuanvfx01.aw22xxx_leds.ui.widgets.MusicStatusCard
 import zuanvfx01.aw22xxx_leds.ui.widgets.SettingsGroup
+import zuanvfx01.aw22xxx_leds.ui.widgets.SoundLevelCard
 import zuanvfx01.aw22xxx_leds.ui.widgets.SettingsRow
 import zuanvfx01.aw22xxx_leds.ui.widgets.SwitchRow
 import zuanvfx01.aw22xxx_leds.ui.widgets.TabScaffold
@@ -149,10 +168,14 @@ fun MusicLedScreen(
         val current = config ?: return
         val enabled = current.toBuilder().setEnabled(true).build()
         config = enabled
-        scope.launch { Application.INSTANCE.settings.updateData { it.toBuilder().setMusic(enabled).build() } }
-        if (!hasMic) permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-        else {
-            startMusicService()
+        // Commit first, then start the service. This fixes a genuine DataStore race
+        // without touching the proven MusicLedService hardware path.
+        scope.launch {
+            Application.INSTANCE.settings.updateData {
+                it.toBuilder().setMusic(enabled).build()
+            }
+            if (!hasMic) permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            else startMusicService()
         }
     }
 
@@ -162,27 +185,8 @@ fun MusicLedScreen(
 
     TabScaffold(appText("music_led", "Music LED"), appText("live_microphone", "Live microphone beat detection"), onBack = onBack) {
         config?.let { cfg ->
-            item {
-                Surface(
-                    Modifier.fillMaxWidth(),
-                    shape = MaterialTheme.shapes.extraLarge,
-                    color = if (running) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLowest,
-                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-                ) {
-                    Row(Modifier.fillMaxWidth().padding(22.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                        Box(
-                            Modifier.size(56.dp).clip(RoundedCornerShape(18.dp)).background(if (running) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primaryContainer),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(if (running) Icons.Filled.GraphicEq else Icons.Filled.MusicNote, null, tint = if (running) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary, modifier = Modifier.size(30.dp))
-                        }
-                        Column(Modifier.weight(1f)) {
-                            Text(if (running) appText("music_active", "Music LED Active") else appText("music_ready", "Music LED Ready"), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-                            Text(if (running) appText("music_listening", "Listening to microphone input") else appText("music_ready_description", "Enable to react to sound and beats"), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                }
-            }
+            // Live status: state, BPM, confidence and the Mic -> Flux -> Threshold -> LED pipeline.
+            item { MusicStatusCard() }
 
             item {
                 Surface(
@@ -261,6 +265,28 @@ fun MusicLedScreen(
                 }
             }
 
+            // ---- Live dashboard: sound level, how beats are detected, LED response, change log ----
+            item { SoundLevelCard() }
+            val beatMode = BeatMode.fromId(cfg.beatMode)
+            item {
+                BeatDetectionCard(
+                    hintKey = if (beatMode == BeatMode.AGGRESSIVE) "dash_detect_hint_aggressive" else "dash_detect_hint"
+                )
+            }
+            item {
+                SensitivityPanel(
+                    cfg.sensitivity,
+                    { persist(cfg.toBuilder().setSensitivity(it).build()) },
+                    descriptionKey = if (beatMode == BeatMode.AGGRESSIVE) "beat_sensitivity_description_aggressive" else "beat_sensitivity_description",
+                    descriptionFallback = if (beatMode == BeatMode.AGGRESSIVE) "Lower = stricter · Higher = reacts to more sounds" else "Lower = reacts easier · Higher = stronger beats only",
+                )
+            }
+            item {
+                BeatModePanel(beatMode) { persist(cfg.toBuilder().setBeatMode(it.id).build()) }
+            }
+            item { LedResponseCard() }
+            item { LedEventsCard() }
+
             item {
                 SettingsGroup(title = appText("effect_section", "EFFECT")) {
                     item {
@@ -268,7 +294,12 @@ fun MusicLedScreen(
                     }
                     if (cfg.useRandomEffects) {
                         item {
-                            EffectSelector(cfg.enabledEffectsList, { persist(cfg.toBuilder().clearEnabledEffects().addAllEnabledEffects(it).build()) })
+                            EffectSelector(
+                                selected = cfg.enabledEffectsList,
+                                onChanged = { persist(cfg.toBuilder().clearEnabledEffects().addAllEnabledEffects(it).build()) },
+                                showNames = cfg.effectLabelMode == 0,
+                                onShowNamesChanged = { names -> persist(cfg.toBuilder().setEffectLabelMode(if (names) 0 else 1).build()) },
+                            )
                         }
                     }
                 }
@@ -277,7 +308,33 @@ fun MusicLedScreen(
             item {
                 SettingsGroup(title = appText("color_section", "COLOR")) {
                     item {
-                        SwitchRow(cfg.useDynamicColors, { persist(cfg.toBuilder().setUseDynamicColors(it).build()) }, appText("dynamic_colors", "Dynamic colors"), appText("dynamic_colors_description", "Shift the LED palette as beats are detected"))
+                        // Dynamic colors needs per-LED colour control and a known LED count, and is
+                        // switched off for good on phones that rebooted while it was running.
+                        val dynamicSupported = remember { SysFsBridge.supports("rgb") && SysFsBridge.colorControlUsable }
+                        var dynamicBlocked by remember { mutableStateOf(DynamicColorGuard.isBlocked(context)) }
+                        val dynamicUsable = dynamicSupported && !dynamicBlocked
+                        LaunchedEffect(dynamicUsable, cfg.useDynamicColors) {
+                            if (!dynamicUsable && cfg.useDynamicColors) {
+                                persist(cfg.toBuilder().setUseDynamicColors(false).build())
+                            }
+                        }
+                        SwitchRow(
+                            checked = cfg.useDynamicColors && dynamicUsable,
+                            onCheckedChange = { want ->
+                                if (dynamicBlocked && want) {
+                                    DynamicColorGuard.clearBlock(context)
+                                    dynamicBlocked = false
+                                }
+                                persist(cfg.toBuilder().setUseDynamicColors(want).build())
+                            },
+                            headline = appText("dynamic_colors", "Dynamic colors"),
+                            supporting = when {
+                                dynamicBlocked -> appText("dynamic_colors_blocked", "Turned off: this phone rebooted when Dynamic colors was used. Tap to try again.")
+                                !dynamicSupported -> appText("dynamic_colors_unsupported", "Not available: this LED does not expose per-LED colour control (white-only or unreadable).")
+                                else -> appText("dynamic_colors_description", "Shift the LED palette as beats are detected")
+                            },
+                            enabled = dynamicUsable || dynamicBlocked,
+                        )
                     }
                     item {
                         SwitchRow(cfg.useOwnValues, { persist(cfg.toBuilder().setUseOwnValues(it).build()) }, "Use own values", appText("own_colors_description", "Use your saved LED colors instead of generated colors"))
@@ -285,7 +342,6 @@ fun MusicLedScreen(
                 }
             }
 
-            item { SensitivityPanel(cfg.sensitivity, { persist(cfg.toBuilder().setSensitivity(it).build()) }) }
             item {
                 FrequencyPanel(
                     cfg.minFrequency,
@@ -310,18 +366,130 @@ fun MusicLedScreen(
 }
 
 @Composable
-private fun SensitivityPanel(initial: Int, onChanged: (Int) -> Unit) {
+private fun SensitivityPanel(
+    initial: Int,
+    onChanged: (Int) -> Unit,
+    descriptionKey: String = "beat_sensitivity_description",
+    descriptionFallback: String = "Lower = reacts easier · Higher = stronger beats only",
+) {
     var value by remember(initial.coerceIn(1, 10)) { mutableFloatStateOf(initial.coerceIn(1, 10).toFloat()) }
     Surface(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerLowest, border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(appText("beat_sensitivity", "Beat sensitivity"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    Text(appText("beat_sensitivity_description", "Lower = reacts easier · Higher = stronger beats only"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(appText(descriptionKey, descriptionFallback), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Text("${value.roundToInt()}/10", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
             }
             Slider(value = value, onValueChange = { value = it }, onValueChangeFinished = { onChanged(value.roundToInt().coerceIn(1, 10)) }, valueRange = 1f..10f, steps = 8)
+        }
+    }
+}
+
+/** Beat detection mode picker: three selectable cards, each with its own icon. */
+@Composable
+private fun BeatModePanel(selected: BeatMode, onSelected: (BeatMode) -> Unit) {
+    Surface(
+        Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceContainerLowest,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+    ) {
+        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(appText("beat_mode_title", "Beat detection mode"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(
+                appText("beat_mode_description", "Choose how the detector balances rhythmic precision and fast musical reaction."),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            BeatModeOption(
+                icon = Icons.Filled.GpsFixed,
+                title = appText("beat_mode_precision", "Precision"),
+                tag = appText("beat_mode_precision_tag", "Tempo-first"),
+                description = appText("beat_mode_precision_description", "Follows the detected beat grid and avoids most transient triggers."),
+                selected = selected == BeatMode.PRECISION,
+                onClick = { onSelected(BeatMode.PRECISION) }
+            )
+            BeatModeOption(
+                icon = Icons.Filled.FlashOn,
+                title = appText("beat_mode_aggressive", "Aggressive"),
+                tag = appText("beat_mode_aggressive_tag", "V5-style"),
+                description = appText("beat_mode_aggressive_description", "Responds quickly to strong kicks, snares and musical transients."),
+                selected = selected == BeatMode.AGGRESSIVE,
+                onClick = { onSelected(BeatMode.AGGRESSIVE) }
+            )
+            BeatModeOption(
+                icon = Icons.Filled.Tune,
+                title = appText("beat_mode_hybrid", "Hybrid"),
+                tag = appText("beat_mode_hybrid_tag", "Recommended balance"),
+                description = appText("beat_mode_hybrid_description", "Combines tempo accuracy with strong-transient responsiveness."),
+                selected = selected == BeatMode.HYBRID,
+                onClick = { onSelected(BeatMode.HYBRID) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun BeatModeOption(
+    icon: ImageVector,
+    title: String,
+    tag: String,
+    description: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val cs = MaterialTheme.colorScheme
+    val shape = RoundedCornerShape(24.dp)
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .selectable(selected = selected, onClick = onClick, role = Role.RadioButton),
+        shape = shape,
+        color = if (selected) cs.primaryContainer else cs.surfaceContainerLowest,
+        border = androidx.compose.foundation.BorderStroke(
+            if (selected) 1.5.dp else 1.dp,
+            if (selected) cs.primary else cs.outlineVariant
+        )
+    ) {
+        Row(
+            Modifier.padding(horizontal = 16.dp, vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Box(
+                Modifier
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .background(if (selected) cs.primary else cs.surfaceVariant),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    icon,
+                    contentDescription = null,
+                    tint = if (selected) cs.onPrimary else cs.onSurfaceVariant,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = if (selected) cs.onPrimaryContainer else cs.onSurface
+                )
+                Text(tag, style = MaterialTheme.typography.labelLarge, color = cs.primary)
+                Text(
+                    description,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (selected) cs.onPrimaryContainer else cs.onSurfaceVariant
+                )
+            }
+            if (selected) {
+                Icon(Icons.Filled.Check, contentDescription = null, tint = cs.primary, modifier = Modifier.size(28.dp))
+            }
         }
     }
 }
@@ -345,29 +513,88 @@ private fun FrequencyPanel(minInitial: Int, maxInitial: Int, onMinChanged: (Int)
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun EffectSelector(selected: List<Int>, onChanged: (List<Int>) -> Unit) {
-    var available by remember { mutableStateOf<List<Int>>(emptyList()) }
+private fun EffectSelector(
+    selected: List<Int>,
+    onChanged: (List<Int>) -> Unit,
+    showNames: Boolean,
+    onShowNamesChanged: (Boolean) -> Unit,
+) {
+    var effects by remember { mutableStateOf<List<LedEffect>>(emptyList()) }
     LaunchedEffect(Unit) {
-        available = SysFsBridge.IO.availableEffects.map { it.index.toInt() }.distinct()
-        if (selected.isEmpty() && available.isNotEmpty()) onChanged(available)
+        effects = SysFsBridge.IO.availableEffects.distinctBy { it.index }
+        val all = effects.map { it.index.toInt() }
+        if (selected.isEmpty() && all.isNotEmpty()) onChanged(all)
     }
-    if (available.isNotEmpty()) {
-        Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(appText("enabled_effects", "Enabled effects"), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(available) { effect ->
-                    val active = selected.contains(effect)
-                    Box(
-                        Modifier.clip(RoundedCornerShape(16.dp)).background(if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant).clickable {
-                            onChanged(if (active) selected - effect else selected + effect)
-                        }.padding(horizontal = 18.dp, vertical = 11.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(effect.toString(), color = if (active) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.SemiBold)
-                    }
+    if (effects.isEmpty()) return
+
+    // If the kernel gives no usable names, names mode would just repeat the numbers.
+    val hasNames = effects.any { it.displayName.isNotBlank() }
+    val namesMode = showNames && hasNames
+
+    Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                appText("enabled_effects", "Enabled effects"),
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(1f),
+            )
+            if (hasNames) {
+                Row(
+                    Modifier.clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surfaceVariant).padding(3.dp),
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    LabelModePill(appText("effect_label_numbers", "123"), selected = !namesMode) { onShowNamesChanged(false) }
+                    LabelModePill(appText("effect_label_names", "Names"), selected = namesMode) { onShowNamesChanged(true) }
                 }
             }
         }
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            effects.forEach { effect ->
+                val id = effect.index.toInt()
+                val active = selected.contains(id)
+                val label = if (namesMode && effect.displayName.isNotBlank()) "$id · ${effect.displayName}" else id.toString()
+                Box(
+                    Modifier
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
+                        .clickable { onChanged(if (active) selected - id else selected + id) }
+                        .padding(horizontal = if (namesMode) 14.dp else 18.dp, vertical = 11.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        label,
+                        color = if (active) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LabelModePill(text: String, selected: Boolean, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .clip(RoundedCornerShape(10.dp))
+            .background(if (selected) MaterialTheme.colorScheme.primary else Color.Transparent)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }

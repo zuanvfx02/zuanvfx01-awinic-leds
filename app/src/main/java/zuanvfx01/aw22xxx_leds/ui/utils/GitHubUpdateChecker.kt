@@ -1,5 +1,6 @@
 package zuanvfx01.aw22xxx_leds.ui.utils
 
+import zuanvfx01.aw22xxx_leds.ui.glass.AppDialog
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -145,50 +146,35 @@ fun GitHubUpdateDialog() {
 
     val available = update
     if (visible && available != null) {
-        AlertDialog(
+        AppDialog(
             onDismissRequest = {
                 GitHubUpdateChecker.dismiss(context, available.version)
                 visible = false
             },
-            title = { Text(appText("update_available_title", "Update available")) },
-            text = {
-                Text(
-                    if (downloading) {
-                        appText("update_downloading", "Downloading module %s...").format(available.version)
-                    } else {
-                        appText("update_available_message", "A newer module version %s is available. Your version is %s. Download the module ZIP and flash it manually in Magisk.")
-                            .format(available.version, currentVersion)
-                    }
-                )
+            title = appText("update_available_title", "Update available"),
+            confirmText = if (downloading) {
+                appText("update_downloading_button", "Downloading...")
+            } else {
+                appText("update_now", "Download module")
             },
-            confirmButton = {
-                Button(
-                    enabled = !downloading,
-                    onClick = {
-                        downloading = true
-                    }
-                ) {
-                    Text(
-                        if (downloading) {
-                            appText("update_downloading_button", "Downloading...")
-                        } else {
-                            appText("update_now", "Download module")
-                        }
-                    )
-                }
+            onConfirm = { downloading = true },
+            confirmEnabled = !downloading,
+            dismissText = appText("update_later", "Later"),
+            onDismiss = {
+                GitHubUpdateChecker.dismiss(context, available.version)
+                visible = false
             },
-            dismissButton = {
-                TextButton(
-                    enabled = !downloading,
-                    onClick = {
-                        GitHubUpdateChecker.dismiss(context, available.version)
-                        visible = false
-                    }
-                ) {
-                    Text(appText("update_later", "Later"))
+            dismissEnabled = !downloading,
+        ) {
+            Text(
+                if (downloading) {
+                    appText("update_downloading", "Downloading module %s...").format(available.version)
+                } else {
+                    appText("update_available_message", "A newer module version %s is available. Your version is %s. Download the module ZIP and flash it manually in Magisk.")
+                        .format(available.version, currentVersion)
                 }
-            }
-        )
+            )
+        }
     }
 
     if (downloading && available != null) {

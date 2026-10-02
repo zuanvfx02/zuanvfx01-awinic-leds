@@ -3,6 +3,8 @@ package zuanvfx01.aw22xxx_leds.ui.widgets
 import zuanvfx01.aw22xxx_leds.ui.utils.appString
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import zuanvfx01.aw22xxx_leds.ui.glass.AppDialog
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -81,55 +83,76 @@ fun <T> TitledVerticalPagerDialog(
     }
 
     if (expanded) {
-        Dialog({ expanded = true }) {
-            Card {
-                Column(horizontalAlignment = Alignment.End) {
-                    val pagerState = rememberPagerState(currentValueIndex) { values.size }
+        val pagerState = rememberPagerState(currentValueIndex) { values.size }
 
-                    val textStyle = MaterialTheme.typography.displaySmall
-                    val textSize = measureTextSize(textStyle)
+        val textStyle = MaterialTheme.typography.displaySmall
+        val textSize = measureTextSize(textStyle)
 
-                    VerticalPager(
-                        pagerState,
-                        Modifier
-                            .width(textSize.first)
-                            .height(textSize.second * 5),
-                        pageSize = PageSize.Fixed(textSize.second),
-                        beyondViewportPageCount = 2,
-                        pageSpacing = textSize.second / 2,
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) { page ->
-                        Text(
-                            valueKey(values[page]),
-                            Modifier
-                                .offset(0.dp, textSize.second * 2f)
-                                .graphicsLayer {
-                                val offset = pagerState.getOffsetDistanceInPages(
-                                    page.coerceIn(0, pagerState.pageCount - 1)
-                                ).absoluteValue
+        // Shared by the glass dialog (Android 12+) and the old Dialog + Card (Android 11-).
+        val pager: @Composable () -> Unit = {
+            VerticalPager(
+                pagerState,
+                Modifier
+                    .width(textSize.first)
+                    .height(textSize.second * 5),
+                pageSize = PageSize.Fixed(textSize.second),
+                beyondViewportPageCount = 2,
+                pageSpacing = textSize.second / 2,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) { page ->
+                Text(
+                    valueKey(values[page]),
+                    Modifier
+                        .offset(0.dp, textSize.second * 2f)
+                        .graphicsLayer {
+                        val offset = pagerState.getOffsetDistanceInPages(
+                            page.coerceIn(0, pagerState.pageCount - 1)
+                        ).absoluteValue
 
-                                lerp(
-                                    start = 1f, stop = 0.95f, fraction = offset.coerceIn(0f, 1f)
-                                ).also { scale ->
-                                    scaleX = scale
-                                    scaleY = scale
-                                }
-                                alpha = lerp(
-                                    start = 0.5f, stop = 1f, fraction = 1f - offset.coerceIn(0f, 1f)
-                                )
-                            },
-                            style = textStyle
+                        lerp(
+                            start = 1f, stop = 0.95f, fraction = offset.coerceIn(0f, 1f)
+                        ).also { scale ->
+                            scaleX = scale
+                            scaleY = scale
+                        }
+                        alpha = lerp(
+                            start = 0.5f, stop = 1f, fraction = 1f - offset.coerceIn(0f, 1f)
                         )
-                    }
+                    },
+                    style = textStyle
+                )
+            }
+        }
 
-                    TextButton({
-                        onValueChange(pagerState.currentPage)
-                        expanded = false
-                    }) {
-                        Text(appString(R.string.ok))
+        AppDialog(
+            onDismissRequest = { expanded = false },
+            title = title,
+            confirmText = appString(R.string.ok),
+            onConfirm = {
+                onValueChange(pagerState.currentPage)
+                expanded = false
+            },
+            dismissText = appString(R.string.cancel),
+            onDismiss = { expanded = false },
+            legacyDialog = {
+                // Android 11-: unchanged from before.
+                Dialog({ expanded = true }) {
+                    Card {
+                        Column(horizontalAlignment = Alignment.End) {
+                            pager()
+
+                            TextButton({
+                                onValueChange(pagerState.currentPage)
+                                expanded = false
+                            }) {
+                                Text(appString(R.string.ok))
+                            }
+                        }
                     }
                 }
-            }
+            },
+        ) {
+            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { pager() }
         }
     }
 }

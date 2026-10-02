@@ -26,6 +26,39 @@ message TimerSettings {
   
   SavedLedSettings led = 6;
   bool use_own_values = 7;
+
+  // Weekday bitmask, bit (Calendar.DAY_OF_WEEK - 1): Sun = 1, Mon = 2, ... Sat = 64.
+  // 0 = never configured = every day (keeps existing installs working unchanged).
+  int32 days_mask = 8;
+}
+
+// Per-app override for Notification LED. Only the parts flagged as used are applied.
+message AppLedStyle {
+  bool use_color = 1;
+  int32 color = 2;     // ARGB, applied to every LED
+  bool use_effect = 3;
+  int32 effect = 4;
+}
+
+// Extra Notification LED options (0 / empty = old behaviour).
+message NotificationExtras {
+  int32 duration_s = 1;          // 0 = default (3 s)
+  bool only_screen_off = 2;
+  bool respect_dnd = 3;
+  int32 filter_mode = 4;         // 0 = all apps, 1 = only listed apps, 2 = all except listed apps
+  repeated string packages = 5;  // the list used by filter_mode
+  map<string, AppLedStyle> app_styles = 6;
+}
+
+// Extra Charger LED options.
+message ChargerExtras {
+  bool level_colors = 1;
+  int32 low_threshold = 2;   // 0 = default (20 %)
+  int32 high_threshold = 3;  // 0 = default (80 %)
+  int32 low_color = 4;       // ARGB, 0 = default red
+  int32 high_color = 5;      // ARGB, 0 = default amber
+  int32 full_color = 6;      // ARGB, 0 = default green
+  bool only_screen_off = 7;
 }
 
 message MusicLedConfig {
@@ -40,6 +73,14 @@ message MusicLedConfig {
   
   // Reserved from the old MediaProjection implementation; microphone mode needs no capture token.
   reserved 9, 10;
+
+  // Beat detection mode. 0 = AGGRESSIVE (default, the original V5-style detector, so existing
+  // installs keep their behaviour), 1 = PRECISION (tempo-first), 2 = HYBRID.
+  int32 beat_mode = 11;
+
+  // How the "Enabled effects" chips are labelled. 0 = NAMES (default: "2 · Breathing"),
+  // 1 = NUMBERS only ("2").
+  int32 effect_label_mode = 12;
 }
 
 message Settings {
@@ -56,4 +97,10 @@ message Settings {
   AutomationConfig charger = 7;
   TimerSettings timer = 8;
   MusicLedConfig music = 9;
+
+  // Battery saver for the UI polling loop. Default (false) keeps the 1s sysfs refresh running.
+  bool polling_saver = 11;
+
+  NotificationExtras notification_extras = 12;
+  ChargerExtras charger_extras = 13;
 }

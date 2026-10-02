@@ -8,6 +8,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
+import zuanvfx01.aw22xxx_leds.ui.glass.GlassSupport
+import zuanvfx01.aw22xxx_leds.ui.glass.GlassSwitch
 
 @Composable
 fun SwitchRow(
@@ -31,7 +33,14 @@ fun SwitchRow(
             { Icon(it, contentDescription = null, tint = androidx.compose.material3.MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp)) }
         },
         trailing = {
-            Switch(
+            if (GlassSupport.blur) {
+                // Android 12+: liquid-glass toggle.
+                GlassSwitch(
+                    checked = checked,
+                    onCheckedChange = onCheckedChange,
+                    enabled = enabled,
+                )
+            } else Switch(
                 checked = checked,
                 onCheckedChange = onCheckedChange,
                 enabled = enabled,

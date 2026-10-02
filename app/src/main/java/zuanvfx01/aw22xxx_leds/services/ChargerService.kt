@@ -8,9 +8,14 @@ import android.content.IntentFilter
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
-import zuanvfx01.aw22xxx_leds.R
+import androidx.core.content.ContextCompat
 import zuanvfx01.aw22xxx_leds.receivers.ChargerReceiver
 
+/**
+ * Keeps one runtime receiver alive for power, battery-level and screen events (these cannot be
+ * declared in the manifest on Android 8+). On start it also syncs the current state, so a charger
+ * that was already plugged in is picked up.
+ */
 class ChargerService : Service() {
 
     private var chargerReceiver: ChargerReceiver? = null
@@ -18,38 +23,46 @@ class ChargerService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        
-        // 1. Buat Notifikasi Wajib untuk Foreground Service
+
         val channel = NotificationChannel(
             CHANNEL_ID,
             "Charger Monitor",
-            NotificationManager.IMPORTANCE_LOW // Low = Biar gak bunyi/getar, cuma muncul diam-diam
+            NotificationManager.IMPORTANCE_LOW
         )
         getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
 
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Charger LED Active")
             .setContentText("Monitoring charging state in background")
-            // Pakai icon bawaan android buat semetara (lu bisa ganti pake icon app lu nanti)
-            .setSmallIcon(android.R.drawable.ic_lock_idle_charging) 
+            .setSmallIcon(android.R.drawable.ic_lock_idle_charging)
             .build()
 
-        startForeground(199, notification) // 199 bebas, ID unik aja
+        startForeground(199, notification)
 
-        // 2. Daftarkan Receiver Charger Secara Resmi
-        chargerReceiver = ChargerReceiver()
+        val receiver = ChargerReceiver()
+        chargerReceiver = receiver
         val filter = IntentFilter().apply {
             addAction(Intent.ACTION_POWER_CONNECTED)
             addAction(Intent.ACTION_POWER_DISCONNECTED)
+            addAction(Intent.ACTION_BATTERY_CHANGED) // level / full, for the colour-by-level option
+            addAction(Intent.ACTION_SCREEN_ON)       // "only when the screen is off" option
+            addAction(Intent.ACTION_SCREEN_OFF)
         }
-        registerReceiver(chargerReceiver, filter)
-        Log.d("AwinicLED", "Charger Service resmi berjalan mandiri!")
+        ContextCompat.registerReceiver(this, receiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+
+        LedResolver.syncBattery(this)
+        Log.d("AwinicLED", "Charger Service running")
     }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
 
     override fun onDestroy() {
         super.onDestroy()
-        chargerReceiver?.let { unregisterReceiver(it) }
-        Log.d("AwinicLED", "Charger Service dimatikan.")
+        chargerReceiver?.let { runCatching { unregisterReceiver(it) } }
+        chargerReceiver = null
+        // If Charger LED was just switched off, this releases the LED back to Timer / manual.
+        LedResolver.requestApply(this)
+        Log.d("AwinicLED", "Charger Service stopped")
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

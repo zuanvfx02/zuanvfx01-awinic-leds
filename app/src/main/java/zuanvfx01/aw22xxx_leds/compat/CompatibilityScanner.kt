@@ -1,10 +1,6 @@
 package zuanvfx01.aw22xxx_leds.compat
 
 import android.os.Build
-import android.system.ErrnoException
-import android.system.Os
-import android.system.OsConstants
-import java.io.File
 
 /**
  * Capability-based, read-only AWINIC/AW22XXX hardware probe.
@@ -15,12 +11,23 @@ import java.io.File
  * not from a fixed number of sysfs files.
  */
 object CompatibilityScanner {
-    private const val LED_CLASS = "/sys/class/leds"
-
     private val driverPattern = Regex("(?i)(aw22xxx|aw210xx|awinic)")
     private val knownNodes = listOf("aw22xxx_led", "aw210xx_led", "aw22xxx", "aw210xx")
 
     enum class CapabilityState { AVAILABLE, UNAVAILABLE, RESTRICTED }
+
+    /** Why the scan failed. Lets the UI say the real reason instead of a blanket "driver not found". */
+    enum class Failure {
+        NONE,
+        /** App is not running in a privileged SELinux domain (installed as a normal app, or module not applied). */
+        NOT_PRIVILEGED,
+        /** LED node exists but SELinux/DAC blocked access (module sepolicy/relabel not applied yet). */
+        ACCESS_DENIED,
+        /** No AWINIC node/driver evidence at all. */
+        NO_DRIVER,
+        /** Node found but minimum interface (brightness/rgb/cfg/effect) is incomplete. */
+        INTERFACE_INCOMPLETE,
+    }
 
     data class Capability(
         val name: String,
@@ -62,6 +69,9 @@ object CompatibilityScanner {
         val model: String = Build.MODEL,
         val androidVersion: String = "${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})",
         val kernel: String = runCatching { System.getProperty("os.version") ?: "unknown" }.getOrDefault("unknown"),
+        val failure: Failure = Failure.NONE,
+        val appDomain: String = readSelfDomain(),
+        val apkPath: String = readApkPath(),
     ) {
         fun capability(name: String): Capability = capabilities[name]
             ?: Capability(name, CapabilityState.UNAVAILABLE)
@@ -83,21 +93,32 @@ object CompatibilityScanner {
         Build.MANUFACTURER, Build.MODEL, Build.FINGERPRINT, Build.VERSION.SDK_INT
     ).joinToString("|")
 
-    fun scan(): Result {
-        val root = File(LED_CLASS)
+    /**
+     * Probes the hardware.
+     *
+     * [access], [device] and [paths] default to the real phone. Unit tests pass a fake
+     * file system and fixed device facts, so no android.* class is touched on that path.
+     */
+    fun scan(
+        access: SysfsAccess = AndroidSysfsAccess,
+        device: DeviceInfo = AndroidSysfsAccess.currentDeviceInfo(),
+        paths: ScanPaths = ScanPaths(),
+    ): Result {
+        val ledRoot = paths.ledClass
         val details = mutableListOf<String>()
         val nodes = linkedSetOf<String>()
         val drivers = linkedSetOf<String>()
         val matched = linkedSetOf<String>()
         val restrictedEvidence = linkedSetOf<String>()
+        val deniedNodes = linkedSetOf<String>()
         var enumerationAvailable = false
 
-        val listed = runCatching { root.listFiles() }.getOrNull()
+        val listed = access.list(ledRoot)
         if (listed != null) {
             enumerationAvailable = true
-            listed.filter { it.isDirectory }.forEach { nodes += it.name }
+            listed.filter { access.isDirectory("$ledRoot/$it") }.forEach { nodes += it }
         } else {
-            details += "Enumerasi $LED_CLASS dibatasi; direct probe tetap digunakan."
+            details += "Enumerasi $ledRoot dibatasi; direct probe tetap digunakan."
         }
 
         fun addDriverEvidence(value: String?, source: String) {
@@ -108,51 +129,54 @@ object CompatibilityScanner {
             }
         }
 
-        fun readText(file: File): Probe<String> {
-            return try {
-                when (val stat = statProbe(file)) {
-                    Stat.MISSING -> return Probe.Missing
-                    Stat.RESTRICTED -> return Probe.Restricted("Permission denied")
-                    Stat.AVAILABLE -> Unit
-                }
-                Probe.Available(file.readText())
-            } catch (e: SecurityException) {
-                Probe.Restricted(e.message ?: "Permission denied")
-            } catch (e: Exception) {
-                if (isPermissionError(e)) Probe.Restricted(e.message ?: "Permission denied")
-                else Probe.Unavailable(e.message ?: "Read failed")
-            }
+        fun readText(path: String): Probe<String> = when (val r = access.read(path)) {
+            is SysfsAccess.Read.Ok -> Probe.Available(r.text)
+            SysfsAccess.Read.Missing -> Probe.Missing
+            is SysfsAccess.Read.Denied -> Probe.Restricted(r.reason)
+            is SysfsAccess.Read.Failed -> Probe.Unavailable(r.reason)
         }
 
-        fun capability(node: File, name: String): Capability {
-            val file = File(node, name)
-            return when (val probe = readText(file)) {
-                is Probe.Available -> Capability(name, CapabilityState.AVAILABLE, file.absolutePath)
+        fun capability(nodePath: String, name: String): Capability {
+            val path = "$nodePath/$name"
+            return when (val probe = readText(path)) {
+                is Probe.Available -> Capability(name, CapabilityState.AVAILABLE, path)
                 is Probe.Restricted -> {
                     restrictedEvidence += name
-                    Capability(name, CapabilityState.RESTRICTED, file.absolutePath, probe.reason)
+                    Capability(name, CapabilityState.RESTRICTED, path, probe.reason)
                 }
-                is Probe.Unavailable -> Capability(name, CapabilityState.UNAVAILABLE, file.absolutePath, probe.reason)
-                Probe.Missing -> Capability(name, CapabilityState.UNAVAILABLE, file.absolutePath, "Not present")
+                is Probe.Unavailable -> Capability(name, CapabilityState.UNAVAILABLE, path, probe.reason)
+                Probe.Missing -> Capability(name, CapabilityState.UNAVAILABLE, path, "Not present")
             }
         }
 
-        fun probe(name: String): Pair<File, Map<String, Capability>>? {
-            val node = File(root, name)
-            if (!isDirectory(node)) return null
+        fun probe(name: String): Map<String, Capability>? {
+            val nodePath = "$ledRoot/$name"
+            // NOTE: File.isDirectory() swallows EACCES and returns false, which used to make an
+            // SELinux-denied node look like "driver not found". Use stat() and keep the errno.
+            when (access.stat(nodePath)) {
+                SysfsAccess.Stat.MISSING -> {
+                    if (name in knownNodes) details += "stat $nodePath: ${access.errno(nodePath)}"
+                    return null
+                }
+                SysfsAccess.Stat.RESTRICTED -> {
+                    restrictedEvidence += "node:$name"
+                    deniedNodes += name
+                    details += "stat $nodePath: ${access.errno(nodePath)} (blocked by SELinux/permission)"
+                }
+                SysfsAccess.Stat.AVAILABLE -> if (!access.isDirectory(nodePath)) return null
+            }
             nodes += name
 
             // The LED node name itself is valid driver evidence for known AWINIC nodes.
             addDriverEvidence(name, name)
 
-            val driverLink = File(node, "device/driver")
-            when (val probe = tryCanonicalName(driverLink)) {
-                is Probe.Available -> addDriverEvidence(probe.value, name)
-                is Probe.Restricted -> restrictedEvidence += "device/driver"
+            when (val probe = access.canonicalName("$nodePath/device/driver")) {
+                is SysfsAccess.Read.Ok -> addDriverEvidence(probe.text, name)
+                is SysfsAccess.Read.Denied -> restrictedEvidence += "device/driver"
                 else -> Unit
             }
 
-            when (val probe = readText(File(node, "device/uevent"))) {
+            when (val probe = readText("$nodePath/device/uevent")) {
                 is Probe.Available -> probe.value.lineSequence()
                     .firstOrNull { it.startsWith("DRIVER=", ignoreCase = true) }
                     ?.substringAfter('=')
@@ -161,27 +185,26 @@ object CompatibilityScanner {
                 else -> Unit
             }
 
-            when (val probe = readText(File(node, "device/of_node/compatible"))) {
+            when (val probe = readText("$nodePath/device/of_node/compatible")) {
                 is Probe.Available -> addDriverEvidence(probe.value, name)
                 is Probe.Restricted -> restrictedEvidence += "of_node/compatible"
                 else -> Unit
             }
 
-            val caps = allCapabilities.associateWith { capability(node, it) }
-            return node to caps
+            return allCapabilities.associateWith { capability(nodePath, it) }
         }
 
         val probed = linkedMapOf<String, Map<String, Capability>>()
 
-        // Known nodes first: direct probing still works when listFiles() is blocked.
+        // Known nodes first: direct probing still works when listing is blocked.
         for (name in knownNodes) {
-            probe(name)?.let { (_, caps) -> probed[name] = caps }
+            probe(name)?.let { caps -> probed[name] = caps }
         }
 
         // Enumerated OEM/custom nodes are a fallback.
         for (name in nodes.toList()) {
             if (name in probed) continue
-            probe(name)?.let { (_, caps) ->
+            probe(name)?.let { caps ->
                 if (driverPattern.containsMatchIn(name) || matched.contains(name)) {
                     probed[name] = caps
                 }
@@ -189,22 +212,12 @@ object CompatibilityScanner {
         }
 
         // Additional driver evidence outside the LED class.
-        runCatching {
-            File("/sys/module").listFiles().orEmpty().forEach { f ->
-                addDriverEvidence(f.name, "module:${f.name}")
-            }
+        access.list(paths.sysModule).orEmpty().forEach { addDriverEvidence(it, "module:$it") }
+        (access.read(paths.procModules) as? SysfsAccess.Read.Ok)?.text?.lineSequence()?.forEach { line ->
+            addDriverEvidence(line.substringBefore(' ').trim(), "proc_modules")
         }
-        runCatching {
-            File("/proc/modules").takeIf { it.isFile && it.canRead() }?.forEachLine { line ->
-                addDriverEvidence(line.substringBefore(' ').trim(), "proc_modules")
-            }
-        }
-        runCatching {
-            listOf("/sys/bus/i2c/drivers", "/sys/bus/platform/drivers").forEach { path ->
-                File(path).listFiles().orEmpty().forEach { f ->
-                    addDriverEvidence(f.name, "driver:${f.name}")
-                }
-            }
+        paths.driverDirs.forEach { dir ->
+            access.list(dir).orEmpty().forEach { addDriverEvidence(it, "driver:$it") }
         }
 
         // Select the best node: prioritize actual core capability coverage.
@@ -259,6 +272,29 @@ object CompatibilityScanner {
             details += "Permission restricted: ${restrictedEvidence.joinToString()}"
         }
 
+        val domain = device.appDomain
+        val apk = device.apkPath
+        val privilegedDomain = domain.contains("priv_app") || domain.contains("system_app") ||
+            domain.contains("platform_app") || domain.contains("system_server")
+        val systemFlag = device.systemFlag
+        details += "App domain: ${domain.ifBlank { "unknown" }}"
+        details += "APK: ${apk.ifBlank { "unknown" }} (system flag: $systemFlag)"
+
+        val failure = when {
+            compatible -> Failure.NONE
+            // A normal user-installed copy (or a module that did not apply) runs as untrusted_app,
+            // which can never see the LED node. This is the #1 cause of "has LEDs but not found".
+            domain.isNotBlank() && !privilegedDomain -> Failure.NOT_PRIVILEGED
+            domain.isBlank() && !systemFlag -> Failure.NOT_PRIVILEGED
+            deniedNodes.isNotEmpty() || (selected != null && restrictedEvidence.isNotEmpty() &&
+                minimumFunctional.any { selectedCapabilities[it]?.state == CapabilityState.RESTRICTED }) -> Failure.ACCESS_DENIED
+            !driverFound -> Failure.NO_DRIVER
+            else -> Failure.INTERFACE_INCOMPLETE
+        }
+        if (failure == Failure.NOT_PRIVILEGED) {
+            details += "App tidak berjalan sebagai priv-app. Hapus versi yang terpasang biasa, lalu reboot setelah flash module."
+        }
+
         val finalCapabilities = if (selected != null) selectedCapabilities else {
             allCapabilities.associateWith { Capability(it, CapabilityState.UNAVAILABLE) }
         }
@@ -271,7 +307,7 @@ object CompatibilityScanner {
                 driverFound -> if (restrictedEvidence.isNotEmpty()) CapabilityState.RESTRICTED else CapabilityState.AVAILABLE
                 else -> CapabilityState.UNAVAILABLE
             },
-            accessOk = enumerationAvailable || selected != null,
+            accessOk = (enumerationAvailable || selected != null) && deniedNodes.isEmpty(),
             ledNodes = nodes.toList().sorted(),
             driverNames = drivers.toList().sorted(),
             matchedNodes = matched.toList().sorted(),
@@ -281,6 +317,13 @@ object CompatibilityScanner {
             interfaceStatus = finalCapabilities
                 .filterKeys { it in coreCapabilities + optionalCapabilities }
                 .mapValues { it.value.state == CapabilityState.AVAILABLE },
+            manufacturer = device.manufacturer,
+            model = device.model,
+            androidVersion = device.androidVersion,
+            kernel = device.kernel,
+            failure = failure,
+            appDomain = domain,
+            apkPath = apk,
         )
     }
 
@@ -291,51 +334,8 @@ object CompatibilityScanner {
         data object Missing : Probe<Nothing>
     }
 
-    private fun isDirectory(file: File): Boolean = try {
-        file.isDirectory
-    } catch (_: SecurityException) {
-        false
-    }
+    // Kept for Result's default arguments (old callers / cache code in AppScreen).
+    internal fun readSelfDomain(): String = AndroidSysfsAccess.readSelfDomain()
 
-    private enum class Stat { AVAILABLE, MISSING, RESTRICTED }
-
-    private fun statProbe(file: File): Stat = try {
-        Os.stat(file.absolutePath)
-        Stat.AVAILABLE
-    } catch (e: ErrnoException) {
-        when (e.errno) {
-            OsConstants.ENOENT, OsConstants.ENOTDIR -> Stat.MISSING
-            OsConstants.EACCES, OsConstants.EPERM -> Stat.RESTRICTED
-            else -> Stat.MISSING
-        }
-    } catch (_: SecurityException) {
-        Stat.RESTRICTED
-    }
-
-    private fun statExists(file: File): Boolean = statProbe(file) == Stat.AVAILABLE
-
-    private fun tryCanonicalName(file: File): Probe<String> = try {
-        when (statProbe(file)) {
-            Stat.AVAILABLE -> Probe.Available(file.canonicalFile.name)
-            Stat.MISSING -> Probe.Missing
-            Stat.RESTRICTED -> Probe.Restricted("Permission denied")
-        }
-    } catch (e: SecurityException) {
-        Probe.Restricted(e.message ?: "Permission denied")
-    } catch (e: Exception) {
-        if (isPermissionError(e)) Probe.Restricted(e.message ?: "Permission denied")
-        else Probe.Unavailable(e.message ?: "Unable to resolve driver")
-    }
-
-    private fun isPermissionError(error: Throwable): Boolean {
-        var current: Throwable? = error
-        while (current != null) {
-            if (current is ErrnoException && current.errno == OsConstants.EACCES) return true
-            val message = current.message.orEmpty()
-            if (message.contains("EACCES", true) || message.contains("permission denied", true) ||
-                message.contains("operation not permitted", true)) return true
-            current = current.cause
-        }
-        return false
-    }
+    internal fun readApkPath(): String = AndroidSysfsAccess.readApkPath()
 }

@@ -3,4 +3,25 @@ type sysfs_led sysfs_type
 typeattribute sysfs_led fs_type
 typeattribute sysfs_led mlstrustedobject
 
+# Files of the LED node
 allow priv_app sysfs_led file { open read write getattr }
+allow system_app sysfs_led file { open read write getattr }
+allow platform_app sysfs_led file { open read write getattr }
+
+# Directory traversal / symlink resolution (was missing: stat() on the node failed with EACCES
+# on ROMs whose policy labels /sys/class/leds as sysfs_leds, which looked like "driver not found")
+allow priv_app sysfs_led dir { search open read getattr }
+allow system_app sysfs_led dir { search open read getattr }
+allow platform_app sysfs_led dir { search open read getattr }
+allow priv_app sysfs_led lnk_file { read getattr }
+allow system_app sysfs_led lnk_file { read getattr }
+allow platform_app sysfs_led lnk_file { read getattr }
+
+allow priv_app sysfs_leds dir { search open read getattr }
+allow priv_app sysfs_leds lnk_file { read getattr }
+allow priv_app sysfs dir { search getattr }
+allow priv_app sysfs lnk_file { read getattr }
+allow system_app sysfs_leds dir { search open read getattr }
+allow system_app sysfs_leds lnk_file { read getattr }
+allow platform_app sysfs_leds dir { search open read getattr }
+allow platform_app sysfs_leds lnk_file { read getattr }

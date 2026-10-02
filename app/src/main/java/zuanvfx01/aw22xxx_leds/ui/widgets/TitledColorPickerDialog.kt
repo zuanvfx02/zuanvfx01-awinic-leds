@@ -28,6 +28,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import zuanvfx01.aw22xxx_leds.ui.glass.AppDialog
 import com.github.skydoves.colorpicker.compose.BrightnessSlider
 import com.github.skydoves.colorpicker.compose.ColorEnvelope
 import com.github.skydoves.colorpicker.compose.HsvColorPicker
@@ -75,38 +76,74 @@ fun TitledColorPickerDialog(
     }
 
     if (expanded) {
-        Dialog({ expanded = true }) {
-            Card {
-                Column(horizontalAlignment = Alignment.End) {
-                    var color by remember { mutableStateOf(value) }
-                    val colorPickerController = rememberColorPickerController()
+        var color by remember { mutableStateOf(value) }
+        val colorPickerController = rememberColorPickerController()
 
-                    HsvColorPicker(
-                        Modifier
-                            .fillMaxWidth()
-                            .height(450.dp),
-                        colorPickerController,
-                        onColorChanged = { env: ColorEnvelope -> color = env.color },
-                        initialColor = color
-                    )
+        // Shared by the glass dialog (Android 12+) and the old Dialog + Card (Android 11-).
+        val picker: @Composable () -> Unit = {
+            HsvColorPicker(
+                Modifier
+                    .fillMaxWidth()
+                    .height(450.dp),
+                colorPickerController,
+                onColorChanged = { env: ColorEnvelope -> color = env.color },
+                initialColor = color
+            )
 
-                    BrightnessSlider(
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(10.dp)
-                            .height(35.dp)
-                            .align(Alignment.CenterHorizontally),
-                        colorPickerController,
-                    )
+            BrightnessSlider(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(10.dp)
+                    .height(35.dp),
+                colorPickerController,
+            )
+        }
 
-                    TextButton({
-                        onValueChange(color)
-                        expanded = false
-                    }) {
-                        Text(appString(R.string.ok))
+        AppDialog(
+            onDismissRequest = { expanded = false },
+            title = title,
+            confirmText = appString(R.string.ok),
+            onConfirm = {
+                onValueChange(color)
+                expanded = false
+            },
+            dismissText = appString(R.string.cancel),
+            onDismiss = { expanded = false },
+            legacyDialog = {
+                // Android 11-: unchanged from before.
+                Dialog({ expanded = true }) {
+                    Card {
+                        Column(horizontalAlignment = Alignment.End) {
+                            HsvColorPicker(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .height(450.dp),
+                                colorPickerController,
+                                onColorChanged = { env: ColorEnvelope -> color = env.color },
+                                initialColor = color
+                            )
+
+                            BrightnessSlider(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .padding(10.dp)
+                                    .height(35.dp)
+                                    .align(Alignment.CenterHorizontally),
+                                colorPickerController,
+                            )
+
+                            TextButton({
+                                onValueChange(color)
+                                expanded = false
+                            }) {
+                                Text(appString(R.string.ok))
+                            }
+                        }
                     }
                 }
-            }
+            },
+        ) {
+            Column(Modifier.fillMaxWidth()) { picker() }
         }
     }
 }

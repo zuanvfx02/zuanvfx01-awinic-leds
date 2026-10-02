@@ -14,12 +14,23 @@ datastore = "1.1.6"
 protobuf = "4.35.1"
 protobufPlugin = "0.10.0"
 ksp = "2.3.4"
+junit = "4.13.2"
+# Liquid Glass (Kyant0/AndroidLiquidGlass) - only composed on Android 12+, see ui/glass/GlassSupport.kt
+backdrop = "2.0.1"
+# Shapes library used by the copied Liquid Glass sources (Capsule, RoundedRectangle). Same version as the catalog app.
+kyantShapes = "1.2.1"
+# Hilt's annotation processor ships kotlin-metadata-jvm 2.3.0, which cannot read the Kotlin 2.4
+# metadata that the backdrop library drags in (kotlin-stdlib 2.4.x). Force a newer reader.
+kotlinMetadata = "2.4.10"
 
 hiltAndroid = "2.59.2"
 hiltAndroidCompiler = "2.59.2"
 hiltNavigationCompose = "1.2.0"
 
 [libraries]
+junit = { group = "junit", name = "junit", version.ref = "junit" }
+kyant-backdrop = { module = "io.github.kyant0:backdrop", version.ref = "backdrop" }
+kyant-shapes = { module = "io.github.kyant0:shapes", version.ref = "kyantShapes" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 compose-colorpicker = { module = "com.github.skydoves:colorpicker-compose", version.ref = "colorpicker" }
 androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "lifecycleRuntimeKtx" }

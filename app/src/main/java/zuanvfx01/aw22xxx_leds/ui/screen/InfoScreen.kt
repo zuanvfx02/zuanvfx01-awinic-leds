@@ -21,13 +21,23 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import zuanvfx01.aw22xxx_leds.R
 import zuanvfx01.aw22xxx_leds.bridge.SysFsBridge
+import zuanvfx01.aw22xxx_leds.ui.utils.CompatibleDevices
+import zuanvfx01.aw22xxx_leds.ui.utils.DeviceBrand
 import zuanvfx01.aw22xxx_leds.ui.utils.LedSysfsLogExporter
 import zuanvfx01.aw22xxx_leds.ui.utils.LanguagePackManager
 import zuanvfx01.aw22xxx_leds.ui.utils.appText
@@ -35,9 +45,22 @@ import zuanvfx01.aw22xxx_leds.ui.widgets.SettingsGroup
 import zuanvfx01.aw22xxx_leds.ui.widgets.SettingsRow
 import zuanvfx01.aw22xxx_leds.ui.widgets.TabScaffold
 
+private const val REPO_URL = "https://github.com/zuanvfx02/zuanvfx01-awinic-leds"
+private const val LICENSE_URL = "https://github.com/zuanvfx02/zuanvfx01-awinic-leds/blob/main/LICENSE"
+
 @Composable
 fun InfoScreen() {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    // Bundled/cached list first (instant), then a once-a-day refresh from the repo's JSON.
+    var deviceBrands by remember { mutableStateOf<List<DeviceBrand>>(emptyList()) }
+    LaunchedEffect(Unit) {
+        deviceBrands = withContext(Dispatchers.IO) { CompatibleDevices.load(context) }
+        if (withContext(Dispatchers.IO) { CompatibleDevices.refresh(context) }) {
+            deviceBrands = withContext(Dispatchers.IO) { CompatibleDevices.load(context) }
+        }
+    }
 
     val logCreatedText = appText("log_created", "Log created: %s")
     val logCreateFailedText = appText("log_create_failed", "Failed to create log: %s")
@@ -110,8 +133,8 @@ fun InfoScreen() {
             SettingsGroup(title = appText("diagnostics_section", "Diagnostics")) {
                 item {
                     SettingsRow(
-                        headline = appText("export_led_log", "Export LED sysfs log"),
-                        supporting = appText("export_led_log_description", "Read all diagnostic nodes and create a clean log file"),
+                        headline = appText("export_led_log", "Export diagnostic"),
+                        supporting = appText("export_led_log_description", "Create one log with device, ROM, app domain, APK path and per-file errno to send for support"),
                         leading = {
                             Icon(
                                 imageVector = Icons.Filled.Description,
@@ -120,20 +143,21 @@ fun InfoScreen() {
                             )
                         },
                         onClick = {
-                            runCatching {
-                                val file = LedSysfsLogExporter.export(context)
-                                Toast.makeText(
-                                    context,
-                                    logCreatedText.format(file.name),
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                                LedSysfsLogExporter.shareToTelegram(context, file)
-                            }.onFailure {
-                                Toast.makeText(
-                                    context,
-                                    logCreateFailedText.format(it.message ?: "unknown error"),
-                                    Toast.LENGTH_LONG
-                                ).show()
+                            scope.launch {
+                                // Many sysfs reads: keep them off the main thread.
+                                val result = withContext(Dispatchers.IO) {
+                                    runCatching { LedSysfsLogExporter.export(context) }
+                                }
+                                result.onSuccess { file ->
+                                    Toast.makeText(context, logCreatedText.format(file.name), Toast.LENGTH_SHORT).show()
+                                    LedSysfsLogExporter.shareToTelegram(context, file)
+                                }.onFailure {
+                                    Toast.makeText(
+                                        context,
+                                        logCreateFailedText.format(it.message ?: "unknown error"),
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                }
                             }
                         },
                         trailing = {
@@ -184,28 +208,34 @@ fun InfoScreen() {
         }
 
         item {
+            SettingsGroup(title = appText("compatible_devices", "Compatible Devices")) {
+                deviceBrands.forEach { brand ->
+                    item {
+                        SettingsRow(
+                            headline = brand.name,
+                            supporting = brand.models.joinToString("\n"),
+                            supportingMaxLines = 6,
+                            onClick = null
+                        )
+                    }
+                }
+            }
+        }
+
+        item {
             SettingsGroup(title = appText("about_section", "About")) {
                 item {
                     SettingsRow(
                         headline = appText("source_code", "Source Code"),
                         supporting = appText("source_code_description", "View project on GitHub"),
-                        onClick = { openUrl("https://github.com/zuanvfx01/awinic-leds") }
-                    )
-                }
-                item {
-                    SettingsRow(
-                        headline = appText("compatible_devices", "Compatible Devices"),
-                        supporting = appText("compatible_devices_description", "POCO F4 GT, Black Shark (aw22xxx driver)"),
-                        onClick = null
+                        onClick = { openUrl(REPO_URL) }
                     )
                 }
                 item {
                     SettingsRow(
                         headline = appText("license", "License"),
-                        supporting = appText("license_description", "View Open Source Licenses"),
-                        onClick = {
-                            openUrl("https://github.com/zuanvfx01/awinic-leds/blob/master/LICENSE")
-                        }
+                        supporting = appText("license_description", "GNU General Public License v3.0"),
+                        onClick = { openUrl(LICENSE_URL) }
                     )
                 }
             }
@@ -218,6 +248,13 @@ fun InfoScreen() {
                         headline = "ZuanVFX01",
                         supporting = appText("lead_developer", "Lead Developer"),
                         onClick = { openUrl("https://github.com/zuanvfx01") }
+                    )
+                }
+                item {
+                    SettingsRow(
+                        headline = "ZuanVFX02",
+                        supporting = appText("developer_zuanvfx02", "Developer"),
+                        onClick = { openUrl("https://github.com/zuanvfx02") }
                     )
                 }
             }

@@ -192,6 +192,18 @@ object LanguagePackManager {
         "how_it_works" to "HOW IT WORKS",
         "beat_sensitivity" to "Beat sensitivity",
         "beat_sensitivity_description" to "Lower = reacts easier · Higher = stronger beats only",
+        "beat_sensitivity_description_aggressive" to "Lower = stricter · Higher = reacts to more sounds",
+        "beat_mode_title" to "Beat detection mode",
+        "beat_mode_description" to "Choose how the detector balances rhythmic precision and fast musical reaction.",
+        "beat_mode_precision" to "Precision",
+        "beat_mode_precision_tag" to "Tempo-first",
+        "beat_mode_precision_description" to "Follows the detected beat grid and avoids most transient triggers.",
+        "beat_mode_aggressive" to "Aggressive",
+        "beat_mode_aggressive_tag" to "V5-style",
+        "beat_mode_aggressive_description" to "Responds quickly to strong kicks, snares and musical transients.",
+        "beat_mode_hybrid" to "Hybrid",
+        "beat_mode_hybrid_tag" to "Recommended balance",
+        "beat_mode_hybrid_description" to "Combines tempo accuracy with strong-transient responsiveness.",
         "led_frequency_range" to "LED frequency range",
         "led_frequency_description" to "Controls the effect frequency, not the microphone audio range.",
         "enabled_effects" to "Enabled effects",
@@ -238,7 +250,7 @@ object LanguagePackManager {
         "minimum_frequency" to "Minimum · %d Hz",
         "maximum_frequency" to "Maximum · %d Hz",
         "manual_led_description" to "Turn the LED on manually. Automation does not change this switch.",
-        "smart_priority_description" to "Automation may temporarily take control of the LED while preserving the Manual switch state.",
+        "smart_priority_description" to "Notifications flash over Charger/Timer, then it returns. Off = strict priority.",
         "music_follow_description" to "LED follows the rhythm of music",
         "tutorial_three_steps" to "3 simple steps",
         "music_react_description" to "React to sound captured by the device microphone",
@@ -258,5 +270,5 @@ object LanguagePackManager {
         "timer_description" to "Automatically control the LED at specific times",
         "start_time" to "Start Time (Turn ON)",
         "end_time" to "End Time (Turn OFF)"
-    )
+    ) + DashboardStrings.defaults
 }

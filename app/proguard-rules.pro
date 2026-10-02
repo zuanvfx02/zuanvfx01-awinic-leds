@@ -29,3 +29,6 @@
 -keep class zuanvfx01.aw22xxx_leds.AutomationConfig { *; }
 -keep class zuanvfx01.aw22xxx_leds.TimerSettings { *; }
 -keep class zuanvfx01.aw22xxx_leds.MusicLedConfig { *; }
+-keepclassmembers class * extends com.google.protobuf.GeneratedMessageLite {
+    <fields>;
+}

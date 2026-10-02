@@ -30,6 +30,7 @@ import zuanvfx01.aw22xxx_leds.ui.widgets.SettingsGroup
 import zuanvfx01.aw22xxx_leds.ui.widgets.SwitchRow
 import zuanvfx01.aw22xxx_leds.ui.widgets.SettingsRow
 import zuanvfx01.aw22xxx_leds.ui.widgets.TabScaffold
+import zuanvfx01.aw22xxx_leds.ui.widgets.pickerLabel
 
 @Composable
 fun SettingsScreen(
@@ -92,7 +93,7 @@ fun SettingsScreen(
                             }
                         },
                         values = uiState.availableEffect,
-                        valueKey = { it.name },
+                        valueKey = { it.pickerLabel() },
                         headline = appString(R.string.led_effect_title),
                         supporting = null
                     )
@@ -107,7 +108,7 @@ fun SettingsScreen(
                         checked = uiState.smartOverride,
                         onCheckedChange = { viewModel.setSmartOverride(it) },
                         headline = appText("smart_priority", "Smart Priority Mode"),
-                        supporting = appText("smart_priority_description", "Automation may temporarily take control of the LED while preserving the Manual switch state.")
+                        supporting = appText("smart_priority_description", "Notifications flash over Charger/Timer, then it returns. Off = strict priority.")
                     )
                 }
                 item {
@@ -165,6 +166,14 @@ fun SettingsScreen(
                         onCheckedChange = { viewModel.setUseOwnValues(it) },
                         headline = appString(R.string.led_use_own_values_title),
                         supporting = appString(R.string.led_use_own_values_description)
+                    )
+                }
+                item {
+                    SwitchRow(
+                        checked = uiState.pollingSaver,
+                        onCheckedChange = { viewModel.setPollingSaver(it) },
+                        headline = appText("polling_saver", "Battery saver polling"),
+                        supporting = appText("polling_saver_description", "Stop reading the LED state every second while the app is in the background. Off by default (always refreshes).")
                     )
                 }
             }

@@ -13,6 +13,16 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <!-- Timer Schedule alarms (falls back to inexact alarms when the user denies it) -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+
+    <!-- Lets the Notification LED app picker list launcher apps on Android 11+ without QUERY_ALL_PACKAGES -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
 
     <application
         android:name=".Application"
@@ -52,6 +62,9 @@
             android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
             </intent-filter>
         </receiver>
         
@@ -71,6 +84,18 @@
             android:name=".services.ChargerService"
             android:exported="false"
             android:foregroundServiceType="specialUse" />
+
+        <!-- Quick Settings tile: master LED switch -->
+        <service
+            android:name=".services.LedTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_tile_led"
+            android:label="@string/tile_led_label"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
 
         <!-- SERVICE MUSIC LED -->
         <service
@@ -94,7 +119,7 @@
                 <!-- RECEIVER UNTUK CHARGER -->
         <receiver
             android:name=".receivers.ChargerReceiver"
-            android:exported="true">
+            android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.ACTION_POWER_CONNECTED" />
                 <action android:name="android.intent.action.ACTION_POWER_DISCONNECTED" />

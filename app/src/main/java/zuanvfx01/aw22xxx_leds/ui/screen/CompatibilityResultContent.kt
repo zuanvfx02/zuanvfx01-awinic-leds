@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.WarningAmber
@@ -30,11 +31,16 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.animation.animateColorAsState
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.widget.Toast
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import zuanvfx01.aw22xxx_leds.compat.CompatibilityScanner
+import zuanvfx01.aw22xxx_leds.compat.toReportText
 
 @Composable
 fun ResultContent(
@@ -42,6 +48,8 @@ fun ResultContent(
     onRetry: () -> Unit,
     onContinue: () -> Unit,
 ) {
+    val context = LocalContext.current
+    val reportCopiedText = appText("report_copied", "Report copied")
     val compatible = result?.compatible == true
     val hasDriver = result?.driverFound == true
     val containerColor by animateColorAsState(
@@ -82,6 +90,8 @@ fun ResultContent(
                             Text(
                                 when {
                                     compatible -> if (result?.partial == true) "Compatible — partial capability set" else "Compatible — full capability set"
+                                    result?.failure == CompatibilityScanner.Failure.NOT_PRIVILEGED -> "App is not running as a system app"
+                                    result?.failure == CompatibilityScanner.Failure.ACCESS_DENIED -> "LED found — access blocked by SELinux"
                                     hasDriver -> "AWINIC driver found — interface incomplete"
                                     else -> "AWINIC driver not found"
                                 },
@@ -91,6 +101,8 @@ fun ResultContent(
                             Text(
                                 when {
                                     compatible -> "The driver exists and can be used. Unavailable optional features will be disabled automatically."
+                                    result?.failure == CompatibilityScanner.Failure.NOT_PRIVILEGED -> "This copy runs as a normal app and cannot see the LED node. Uninstall any normally-installed version of this app, re-flash the module, then reboot."
+                                    result?.failure == CompatibilityScanner.Failure.ACCESS_DENIED -> "The LED node exists but permissions are blocked. Reboot once after flashing the module; if it persists, open the module's Action button and send the log."
                                     hasDriver -> "Driver evidence exists, but the minimum functional interface is not available."
                                     else -> "No usable AWINIC/AW22XXX driver evidence was found."
                                 },
@@ -114,6 +126,8 @@ fun ResultContent(
                     ReportLine("Core", "${result?.coreAvailable ?: 0}/${CompatibilityScanner.coreCapabilities.size} available")
                     ReportLine("Optional", "${result?.optionalAvailable ?: 0}/${CompatibilityScanner.optionalCapabilities.size} available")
                     ReportLine("Restricted", "${result?.restrictedCount ?: 0}")
+                    ReportLine("App domain", result?.appDomain?.ifBlank { "unknown" } ?: "—")
+                    ReportLine("APK", result?.apkPath?.substringBeforeLast('/')?.ifBlank { "unknown" } ?: "—")
                 }
             }
         }
@@ -162,6 +176,8 @@ fun ResultContent(
             Text(
                 when {
                     compatible -> "Compatible — partial capability set\nThe driver exists and can be used.\nUnavailable optional features will be disabled automatically."
+                    result?.failure == CompatibilityScanner.Failure.NOT_PRIVILEGED -> "Not a priv-app (domain: ${result?.appDomain?.ifBlank { "unknown" }}). This is a setup problem, not missing hardware."
+                    result?.failure == CompatibilityScanner.Failure.ACCESS_DENIED -> "LED node present but access denied. This is a permission problem, not missing hardware."
                     hasDriver -> "Driver found, but the minimum functional capability set is incomplete."
                     else -> "Incompatible — no AWINIC driver evidence."
                 },
@@ -179,6 +195,28 @@ fun ResultContent(
                 }
                 if (compatible) {
                     Button(onClick = onContinue, modifier = Modifier.weight(1f)) { Text(appText("open_menu", "Open menu")) }
+                }
+            }
+        }
+
+        if (result != null) {
+            item {
+                OutlinedButton(
+                    onClick = {
+                        val version = runCatching {
+                            context.packageManager.getPackageInfo(context.packageName, 0).versionName
+                        }.getOrNull() ?: "?"
+                        val clipboard = context.getSystemService(ClipboardManager::class.java)
+                        clipboard?.setPrimaryClip(
+                            ClipData.newPlainText("AWINIC LED report", result.toReportText(version))
+                        )
+                        Toast.makeText(context, reportCopiedText, Toast.LENGTH_SHORT).show()
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Filled.ContentCopy, contentDescription = null)
+                    Spacer(Modifier.size(8.dp))
+                    Text(appText("copy_report", "Copy report"))
                 }
             }
         }

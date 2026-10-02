@@ -57,4 +57,5 @@
         <item quantity="one">%1$d Register</item>
         <item quantity="other">%1$d Registers</item>
     </plurals>
+    <string name="tile_led_label">LED</string>
 </resources>

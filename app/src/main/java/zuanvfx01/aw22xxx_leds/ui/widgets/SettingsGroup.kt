@@ -86,6 +86,7 @@ fun SettingsRow(
     modifier: Modifier = Modifier,
     supporting: String? = null,
     supportingMono: Boolean = false,
+    supportingMaxLines: Int = 2,
     enabled: Boolean = true,
     onClick: (() -> Unit)? = null,
     leading: (@Composable () -> Unit)? = null,
@@ -116,7 +117,7 @@ fun SettingsRow(
                     supporting,
                     style = if (supportingMono) MaterialTheme.typography.bodySmall.copy(fontFamily = MonoFamily) else MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
+                    maxLines = supportingMaxLines,
                     overflow = TextOverflow.Ellipsis
                 )
             }

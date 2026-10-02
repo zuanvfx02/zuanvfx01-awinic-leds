@@ -3,8 +3,6 @@ package zuanvfx01.aw22xxx_leds.ui.screen
 import zuanvfx01.aw22xxx_leds.ui.utils.appText
 import zuanvfx01.aw22xxx_leds.ui.utils.appString
 import zuanvfx01.aw22xxx_leds.ui.utils.GitHubUpdateDialog
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -29,19 +27,21 @@ import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.Button
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -78,13 +78,25 @@ import zuanvfx01.aw22xxx_leds.compat.CompatibilityScanner
 import zuanvfx01.aw22xxx_leds.ui.model.LedsViewModel
 import zuanvfx01.aw22xxx_leds.ui.navigation.AppDestination
 import zuanvfx01.aw22xxx_leds.ui.theme.AppTheme
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import zuanvfx01.aw22xxx_leds.ui.glass.AdaptiveFloatingNavBar
+import zuanvfx01.aw22xxx_leds.ui.glass.BlurEdge
+import zuanvfx01.aw22xxx_leds.ui.glass.ProgressiveBlurLayer
+import zuanvfx01.aw22xxx_leds.ui.glass.GlassDialogHost
+import zuanvfx01.aw22xxx_leds.ui.glass.GlassDialogHostState
+import zuanvfx01.aw22xxx_leds.ui.glass.GlassSupport
+import zuanvfx01.aw22xxx_leds.ui.glass.LocalGlassDialogHost
+import zuanvfx01.aw22xxx_leds.ui.widgets.FloatingNavBarDefaults
+import zuanvfx01.aw22xxx_leds.ui.widgets.FloatingNavItem
+import zuanvfx01.aw22xxx_leds.ui.widgets.LocalFloatingBarPadding
 
 private enum class AppInnerRoute { Splash, Intro, Compatibility, Main }
 
 private object CompatibilityCache {
     private const val PREFS = "compatibility_cache"
     private const val KEY_SCHEMA = "schema"
-    private const val SCHEMA_VERSION = 2
+    private const val SCHEMA_VERSION = 3
     private const val KEY_FINGERPRINT = "fingerprint"
     private const val KEY_COMPATIBLE = "compatible"
     private const val KEY_ACCESS = "access"
@@ -172,24 +184,31 @@ private fun AppRouter() {
     fun runCheck(force: Boolean = false) {
         scope.launch {
             if (!force) {
+                // Only a PREVIOUS SUCCESS may be reused, and only if it still works right now.
+                // A cached failure must never stick: the module may have been (re)flashed or the
+                // device rebooted since, and the old code froze the "driver not found" screen forever.
                 val cached = CompatibilityCache.load(context)
-                if (cached != null) {
-                    result = cached
-                    if (cached.compatible && cached.selectedNode != null) {
+                if (cached != null && cached.compatible && cached.selectedNode != null) {
+                    val stillReadable = withContext(Dispatchers.IO) {
+                        runCatching {
+                            val f = java.io.File("/sys/class/leds/${cached.selectedNode}/brightness")
+                            f.canRead() && f.readText().isNotBlank()
+                        }.getOrDefault(false)
+                    }
+                    if (stillReadable) {
+                        result = cached
                         SysFsBridge.configureLedDirectory("/sys/class/leds/${cached.selectedNode}")
                         SysFsBridge.configureCapabilities(cached.capabilities)
                         route = AppInnerRoute.Main
-                    } else {
-                        route = AppInnerRoute.Compatibility
+                        return@launch
                     }
-                    return@launch
                 }
             }
             checking = true
             route = AppInnerRoute.Compatibility
             val scanned = withContext(Dispatchers.IO) { CompatibilityScanner.scan() }
             result = scanned
-            CompatibilityCache.save(context, scanned)
+            if (scanned.compatible) CompatibilityCache.save(context, scanned) else CompatibilityCache.clear(context)
             scanned.selectedNode?.let { SysFsBridge.configureLedDirectory("/sys/class/leds/$it") }
             SysFsBridge.configureCapabilities(scanned.capabilities)
             checking = false
@@ -274,93 +293,164 @@ private fun MainShell() {
     }
 
     fun finishTutorial() {
-        // Always leave the user at Home after the first-use tutorial. The tutorial can
-        // finish from the nested Music LED screen, so simply hiding the overlay would
-        // strand the user there. Pop the nested routes and select the real Home tab.
+        // Completing the Music LED tutorial must not change the current nested
+        // destination. Enabling Music LED should keep the user on this screen.
         tutorialVisible = false
-        tabsNav.navigate(AppDestination.Home.route) {
-            popUpTo(tabsNav.graph.findStartDestination().id) { saveState = true }
-            launchSingleTop = true
-            restoreState = true
-        }
         scope.launch {
-            Application.INSTANCE.settings.updateData { it.toBuilder().setCompletedTutorial(true).build() }
+            Application.INSTANCE.settings.updateData {
+                it.toBuilder().setCompletedTutorial(true).build()
+            }
         }
     }
 
+    // Keep the last real top-level tab selected while a nested destination is being
+    // pushed/popped. NavController can briefly expose a null/non-top-level destination
+    // during the transaction; deriving selectedIndex directly from that transient state
+    // makes the bar go selected -> unselected -> selected (visible as a double flicker).
+    var selectedTopLevel by remember { mutableStateOf(AppDestination.Home) }
+    LaunchedEffect(currentDestination) {
+        currentDestination?.let { selectedTopLevel = it }
+    }
+
+    // Detail screens (settings_music, settings_timer, ...) belong to the Settings tab.
+    // The stable selectedTopLevel state intentionally survives those nested transitions.
+    val highlightedDestination = selectedTopLevel
+
+    val navInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val barHeight = if (GlassSupport.blur) FloatingNavBarDefaults.GlassHeight else FloatingNavBarDefaults.Height
+    val barPadding = barHeight + FloatingNavBarDefaults.BottomMargin +
+        FloatingNavBarDefaults.ContentGap + navInset
+    val navItems = AppDestination.entries.map { destination ->
+        FloatingNavItem(
+            label = appString(destination.label),
+            selectedIcon = destination.selectedIcon,
+            unselectedIcon = destination.unselectedIcon,
+            modifier = if (destination == AppDestination.Settings) {
+                Modifier.onGloballyPositioned { settingsTarget = it.boundsInRoot() }
+            } else Modifier,
+        )
+    }
+
+    // Android 12+: the NavHost content is recorded as a backdrop so the nav bar can be glass.
+    // Android 11-: null -> stock UI, no extra layer and no blur.
+    //  - contentBackdrop : the NavHost only. The bottom progressive blur samples THIS one.
+    //  - glassBackdrop   : NavHost + the bottom blur strip. The nav bar and dialogs refract THIS one,
+    //                      so they see the same blurred strip the user sees.
+    // Two layers are needed because a layer cannot sample itself.
+    val glassBackdrop = if (GlassSupport.blur) rememberLayerBackdrop() else null
+    val contentBackdrop = if (GlassSupport.blur) rememberLayerBackdrop() else null
+    val glassBaseColor = MaterialTheme.colorScheme.background
+
+    // Glass dialogs (ui/glass/GlassDialog.kt) refract this same content.
+    val dialogHost = LocalGlassDialogHost.current
+    DisposableEffect(dialogHost, glassBackdrop) {
+        dialogHost?.backdrop = glassBackdrop
+        onDispose { if (dialogHost?.backdrop === glassBackdrop) dialogHost?.backdrop = null }
+    }
+
     Box(Modifier.fillMaxSize()) {
-        Scaffold(
-            contentWindowInsets = WindowInsets(0, 0, 0, 0),
-            bottomBar = {
-                NavigationBar(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
-                    tonalElevation = 0.dp
+        // Everything the glass nav bar / dialogs should "see" is recorded into glassBackdrop.
+        Box(
+            Modifier
+                .fillMaxSize()
+                .then(if (glassBackdrop != null) Modifier.layerBackdrop(glassBackdrop) else Modifier)
+        ) {
+            CompositionLocalProvider(LocalFloatingBarPadding provides barPadding) {
+                NavHost(
+                    tabsNav,
+                    startDestination = AppDestination.Home.route,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .then(
+                            if (contentBackdrop != null) {
+                                // layerBackdrop first (outer) so the base color below is recorded too.
+                                Modifier.layerBackdrop(contentBackdrop).background(glassBaseColor)
+                            } else Modifier
+                        ),
                 ) {
-                    AppDestination.entries.forEach { destination ->
-                        NavigationBarItem(
-                            modifier = if (destination == AppDestination.Settings) {
-                                Modifier.onGloballyPositioned { settingsTarget = it.boundsInRoot() }
-                            } else Modifier,
-                            selected = destination == currentDestination,
-                            onClick = {
-                                tabsNav.navigate(destination.route) {
-                                    popUpTo(tabsNav.graph.findStartDestination().id) { saveState = true }
-                                    launchSingleTop = true
-                                    restoreState = true
+                    composable(AppDestination.Home.route) {
+                        HomeScreen(
+                            viewModel = ledsViewModel,
+                            onNavigate = { route ->
+                                tabsNav.navigate(route) {
+                                    // Tab destinations keep the bottom-bar behavior; detail screens
+                                    // (settings_music, settings_timer, ...) just push onto Home.
+                                    if (AppDestination.fromRoute(route) != null) {
+                                        popUpTo(tabsNav.graph.findStartDestination().id) { saveState = true }
+                                        launchSingleTop = true
+                                        restoreState = true
+                                    }
                                 }
-                            },
-                            icon = {
-                                Icon(
-                                    if (destination == currentDestination) destination.selectedIcon else destination.unselectedIcon,
-                                    contentDescription = appString(destination.label)
-                                )
-                            },
-                            label = { Text(appString(destination.label)) }
+                            }
+                        )
+                    }
+                    composable(AppDestination.Settings.route) {
+                        SettingsScreen(
+                            viewModel = ledsViewModel,
+                            onNavigateNotification = { tabsNav.navigate("settings_notification") },
+                            onNavigateCharger = { tabsNav.navigate("settings_charger") },
+                            onNavigateTimer = { tabsNav.navigate("settings_timer") },
+                            onNavigateMusic = { tabsNav.navigate("settings_music") },
+                            onMusicTutorialTarget = { musicTarget = it }
+                        )
+                    }
+                    composable(AppDestination.Info.route) { InfoScreen() }
+                    composable("settings_notification") { NotificationSettingsScreen(ledsViewModel) { tabsNav.popBackStack() } }
+                    composable("settings_timer") { TimerSettingsScreen(ledsViewModel) { tabsNav.popBackStack() } }
+                    composable("settings_charger") { ChargerSettingsScreen(ledsViewModel) { tabsNav.popBackStack() } }
+                    composable("settings_music") {
+                        MusicLedScreen(
+                            onBack = { tabsNav.popBackStack() },
+                            onTutorialEnableTarget = { musicEnableTarget = it },
+                            onTutorialEnableAction = { musicEnableAction = it },
+                            onTutorialEnabled = { finishTutorial() }
                         )
                     }
                 }
             }
-        ) { padding ->
-            NavHost(
-                tabsNav,
-                startDestination = AppDestination.Home.route,
-                modifier = Modifier.fillMaxSize().padding(bottom = padding.calculateBottomPadding()),
-                enterTransition = { fadeIn() },
-                exitTransition = { fadeOut() },
-                popEnterTransition = { fadeIn() },
-                popExitTransition = { fadeOut() },
-            ) {
-                composable(AppDestination.Home.route) { HomeScreen(ledsViewModel) }
-                composable(AppDestination.Settings.route) {
-                    SettingsScreen(
-                        viewModel = ledsViewModel,
-                        onNavigateNotification = { tabsNav.navigate("settings_notification") },
-                        onNavigateCharger = { tabsNav.navigate("settings_charger") },
-                        onNavigateTimer = { tabsNav.navigate("settings_timer") },
-                        onNavigateMusic = { tabsNav.navigate("settings_music") },
-                        onMusicTutorialTarget = { musicTarget = it }
-                    )
-                }
-                composable(AppDestination.Info.route) { InfoScreen() }
-                composable("settings_notification") { NotificationSettingsScreen(ledsViewModel) { tabsNav.popBackStack() } }
-                composable("settings_timer") { TimerSettingsScreen(ledsViewModel) { tabsNav.popBackStack() } }
-                composable("settings_charger") { ChargerSettingsScreen(ledsViewModel) { tabsNav.popBackStack() } }
-                composable("settings_music") {
-                    MusicLedScreen(
-                        onBack = { tabsNav.popBackStack() },
-                        onTutorialEnableTarget = { musicEnableTarget = it },
-                        onTutorialEnableAction = { musicEnableAction = it },
-                        onTutorialEnabled = { finishTutorial() }
-                    )
-                }
+
+
+            // Progressive blur behind the floating bottom navigation (mirror of the top app bar).
+            if (contentBackdrop != null) {
+                ProgressiveBlurLayer(
+                    backdrop = contentBackdrop,
+                    edge = BlurEdge.Bottom,
+                    tint = glassBaseColor,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .height(barPadding + 28.dp),
+                )
             }
         }
+
+        AdaptiveFloatingNavBar(
+            backdrop = glassBackdrop,
+            items = navItems,
+            selectedIndex = AppDestination.entries.indexOf(highlightedDestination),
+            onSelect = { index ->
+                tabsNav.navigate(AppDestination.entries[index].route) {
+                    popUpTo(tabsNav.graph.findStartDestination().id) { saveState = true }
+                    launchSingleTop = true
+                    restoreState = true
+                }
+            },
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(
+                    start = FloatingNavBarDefaults.HorizontalMargin,
+                    end = FloatingNavBarDefaults.HorizontalMargin,
+                    bottom = FloatingNavBarDefaults.BottomMargin,
+                ),
+        )
 
         if (tutorialVisible) {
             InteractiveTutorial(
                 step = tutorialStep,
                 currentDestination = currentDestination,
                 currentRoute = currentRoute,
+                bottomInset = barPadding,
                 settingsTarget = settingsTarget,
                 musicTarget = musicTarget,
                 musicEnableTarget = musicEnableTarget,
@@ -399,6 +489,7 @@ private fun InteractiveTutorial(
     step: Int,
     currentDestination: AppDestination?,
     currentRoute: String?,
+    bottomInset: androidx.compose.ui.unit.Dp,
     settingsTarget: Rect?,
     musicTarget: Rect?,
     musicEnableTarget: Rect?,
@@ -486,7 +577,7 @@ private fun InteractiveTutorial(
         Surface(
             Modifier
                 .align(if (step == 0) Alignment.Center else Alignment.BottomCenter)
-                .padding(horizontal = 16.dp, vertical = if (step == 0) 24.dp else 98.dp)
+                .padding(horizontal = 16.dp, vertical = if (step == 0) 24.dp else bottomInset + 8.dp)
                 .fillMaxWidth(),
             shape = RoundedCornerShape(28.dp),
             color = MaterialTheme.colorScheme.surfaceContainerLowest,
@@ -528,7 +619,15 @@ private data class Quad(
 @Composable
 fun AppScreen() {
     AppTheme {
-        AppRouter()
-        GitHubUpdateDialog()
+        // Android 12+: every dialog is composed into this one overlay host (iOS Liquid Glass style).
+        // Android 11-: no host -> dialogs fall back to the previous Material ones.
+        val dialogHost = remember { GlassDialogHostState() }
+        CompositionLocalProvider(LocalGlassDialogHost provides (if (GlassSupport.blur) dialogHost else null)) {
+            Box(Modifier.fillMaxSize()) {
+                AppRouter()
+                GitHubUpdateDialog()
+                if (GlassSupport.blur) GlassDialogHost(dialogHost)
+            }
+        }
     }
 }

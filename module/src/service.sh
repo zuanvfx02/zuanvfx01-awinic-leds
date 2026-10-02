@@ -1,45 +1,70 @@
 #!/system/bin/sh
 MODDIR=${0%/*}
 
+. "$MODDIR/common.sh"
 . "$MODDIR/logging.sh"
 enable_logging service
 
-echo "Service started at $(date)."
-echo "\$MODDIR - $MODDIR"
+echo "Service started at $(date)"
+echo "MODDIR - $MODDIR"
 
-resetprop -w sys.boot_completed 0 >/dev/null
-echo "Boot completed at $(date)."
+# wait for boot
+resetprop -w sys.boot_completed 0 >/dev/null 2>&1
+echo "Boot completed at $(date)"
 
-PKG=zuanvfx01.aw22xxx_leds
-echo "Package: $PKG"
+# The driver can probe late: wait up to 60s for the node instead of giving up.
+NODE=""
+i=0
+while [ $i -lt 60 ]; do
+  NODE=$(find_led_node) && break
+  NODE=""
+  i=$((i + 1))
+  sleep 1
+done
+[ -z "$NODE" ] && [ -f "$MODDIR/node" ] && NODE=$(cat "$MODDIR/node")
+if [ -z "$NODE" ]; then
+  echo "ERROR: no AWINIC LED node found after 60s"
+  exit 0
+fi
+DIR="$LED_ROOT/$NODE"
+echo "Node: $NODE"
 
-APP_UID=$(awk '/^'$PKG'/ {print $2}' /data/system/packages.list)
-echo "UID: $APP_UID"
+# Wait (best effort) until the priv-app is registered, so we can chown to it.
+APP_UID=""
+i=0
+while [ $i -lt 30 ]; do
+  APP_UID=$(awk -v p="$PKG" '$1 == p {print $2}' /data/system/packages.list)
+  [ -n "$APP_UID" ] && break
+  i=$((i + 1))
+  sleep 1
+done
+echo "Package: $PKG  UID: ${APP_UID:-<not registered>}"
+
+CTX=u:object_r:sysfs_led:s0
+
+# directory itself (needed so the app can stat/traverse the node)
+chcon -v "$CTX" "$DIR"
+chmod -v 755 "$DIR" 2>/dev/null
 
 own() {
-  echo
-  echo "--------- $1 ---------"
-  # set sepolicy context
-  chcon -v u:object_r:sysfs_led:s0 /sys/class/leds/aw22xxx_led/"$1"
-  
-  # set app uid as owner
-  chown -v "$APP_UID".root /sys/class/leds/aw22xxx_led/"$1"
-  
-  # set required mode
-  chmod -v "$2" /sys/class/leds/aw22xxx_led/"$1"
+  [ -e "$DIR/$1" ] || { echo "skip $1 (missing)"; return; }
+  chcon -v "$CTX" "$DIR/$1"
+  # chown is best effort; mode 666 + SELinux (only priv/system apps allowed) keeps it working
+  # even when the UID is not known yet.
+  [ -n "$APP_UID" ] && chown -v "$APP_UID".root "$DIR/$1"
+  chmod -v "$2" "$DIR/$1"
 }
 
-own hwen 644
-own effect 644
-own cfg 644
-own frq 644
-own rgb 644
-own trigger 644
+# writable controls
+for f in hwen effect cfg frq rgb trigger; do own $f 666; done
+# read-only (prevent accidental value changes)
+for f in reg imax brightness max_brightness task0 task1; do own $f 444; done
 
-# prevent value change
-own reg 444
-own imax 444
-own brightness 444
-own max_brightness 444
-own task0 444
-own task1 444
+# brightness is written by the Music LED feature
+[ -e "$DIR/brightness" ] && chmod 666 "$DIR/brightness"
+
+echo "Done at $(date)"
+ls -lZ "$DIR"
+
+# Record SELinux denials related to this feature to help debugging
+( dmesg 2>/dev/null | grep -E "avc: +denied" | grep -E "sysfs_led|sysfs_leds|aw22xxx|aw210xx|$PKG" | tail -n 40 ) > "$LOG_DIR/avc.log" 2>&1

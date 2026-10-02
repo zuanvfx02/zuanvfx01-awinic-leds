@@ -1,5 +1,6 @@
 package zuanvfx01.aw22xxx_leds.ui.theme
 
+import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ColorScheme
@@ -114,11 +115,12 @@ fun AppTheme(
 ) {
     val context = LocalContext.current
 
-    // minSdk 33 >= 31, so dynamic color is always available at runtime. The flag exists so
-    // previews / tests can force the brand palette.
+    // Dynamic color needs Android 12 (API 31). minSdk is 29, so guard it; the flag also lets
+    // previews / tests force the brand palette.
+    val canUseDynamic = dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
     val colorScheme: ColorScheme = when {
-        dynamicColor && darkTheme -> dynamicDarkColorScheme(context)
-        dynamicColor -> dynamicLightColorScheme(context)
+        canUseDynamic && darkTheme -> dynamicDarkColorScheme(context)
+        canUseDynamic -> dynamicLightColorScheme(context)
         darkTheme -> darkScheme
         else -> lightScheme
     }

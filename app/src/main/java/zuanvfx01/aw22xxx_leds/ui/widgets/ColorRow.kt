@@ -1,5 +1,6 @@
 package zuanvfx01.aw22xxx_leds.ui.widgets
 
+import zuanvfx01.aw22xxx_leds.ui.glass.AppDialog
 import zuanvfx01.aw22xxx_leds.ui.utils.appString
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -91,10 +92,18 @@ fun ColorRow(
         var draft by remember { mutableStateOf(value) }
         val controller = rememberColorPickerController()
 
-        AlertDialog(
+        AppDialog(
             onDismissRequest = { open = false },
-            title = { Text(headline) },
-            text = {
+            title = headline,
+            confirmText = appString(R.string.ok),
+            onConfirm = {
+                onValueChange(draft)
+                open = false
+            },
+            confirmExpressive = true,
+            dismissText = appString(R.string.cancel),
+            onDismiss = { open = false },
+        ) {
                 Column(
                     Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -137,19 +146,6 @@ fun ColorRow(
                         wheelRadius = 14.dp
                     )
                 }
-            },
-            confirmButton = {
-                Button(
-                    {
-                        onValueChange(draft)
-                        open = false
-                    },
-                    shapes = ButtonDefaults.shapes()
-                ) { Text(appString(R.string.ok)) }
-            },
-            dismissButton = {
-                TextButton({ open = false }) { Text(appString(R.string.cancel)) }
-            }
-        )
+        }
     }
 }
